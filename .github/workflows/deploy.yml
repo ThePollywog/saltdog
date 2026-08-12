@@ -1,0 +1,56 @@
+name: Deploy
+
+# Builds SALTDOG and publishes the static output to GitHub Pages. The app is
+# 100% client-side (data in IndexedDB, PDF generation/editing via pdf-lib and
+# pdf.js in the browser), so a static host is all it needs.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; let an in-progress run finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # vite base is "./" (relative), so the build works under the Pages subpath.
+      # GITHUB_RUN_NUMBER increments on every workflow run, so vite.config.js
+      # stamps each deployment with a new version (e.g. 1.0.0.42) that shows in
+      # the navbar. No commit needed — this job only has `contents: read`.
+      - run: npm run build
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_SHA: ${{ github.sha }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
