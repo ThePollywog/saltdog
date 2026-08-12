@@ -58,6 +58,7 @@ export default {
   sections: [
     {
       id: "schedule",
+      refs: ["bupersinst-1610-10"],
       heading: "Reporting Schedule",
       kind: "eval-schedule",
       keywords: ["month", "paygrade", "reporting month", "schedule", "cycle"],
@@ -65,6 +66,7 @@ export default {
     },
     {
       id: "rules",
+      refs: ["bupersinst-1610-10"],
       heading: "Due-Date Rules",
       kind: "kv",
       keywords: ["due date", "deadline", "when is it due", "mid-term", "counseling"],
@@ -72,6 +74,7 @@ export default {
     },
     {
       id: "coverage",
+      refs: ["bupersinst-1610-10"],
       heading: "Coverage & Caveats",
       kind: "kv",
       keywords: ["flag officer", "o7", "o8", "o9", "o10", "admiral", "no reports"],

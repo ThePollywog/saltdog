@@ -18,6 +18,7 @@ import {
   mdiOpenInNew,
   mdiSitemapOutline,
   mdiMedalOutline,
+  mdiGavel,
 } from "@mdi/js";
 import { TOPICS } from "../../data/index.js";
 import { TOOLS } from "../../data/tools.js";
@@ -35,6 +36,7 @@ const TOPIC_ICONS = {
   "joint-codes": mdiSitemapOutline,
   "phonetic-alphabet": mdiAlphabeticalVariant,
   awards: mdiMedalOutline,
+  directives: mdiGavel,
 };
 
 /**

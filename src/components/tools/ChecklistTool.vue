@@ -16,6 +16,7 @@ import { GROUPS, HOWTO, HOWTO_NOTE, NOTE } from "../../data/checklist.js";
 import { useLocalStore } from "../../composables/useLocalStore.js";
 import PdfButton from "../common/PdfButton.vue";
 import SystemLinks from "../common/SystemLinks.vue";
+import DirectiveRefs from "../common/DirectiveRefs.vue";
 
 const { state: done, reset } = useLocalStore("checklist", {
   version: 1,
@@ -172,6 +173,9 @@ const expanded = ref([]);
             <!-- The application itself, so a ticked box and the thing that
                  ticks it are one click apart rather than a search away. -->
             <SystemLinks :ids="item.systems" class="mt-2" />
+            <!-- The instruction the item rests on. A ticked box is a claim about
+                 readiness; this is where the claim comes from. -->
+            <DirectiveRefs :refs="item.refs" class="mt-2" />
           </div>
         </div>
       </v-card>

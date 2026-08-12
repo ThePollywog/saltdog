@@ -15,6 +15,7 @@ import {
   mdiAlphabeticalVariant,
   mdiCalculatorVariantOutline,
   mdiCalendarCheckOutline,
+  mdiCalendarClockOutline,
   mdiCheckboxMarkedOutline,
   mdiMedalOutline,
 } from "@mdi/js";
@@ -27,6 +28,14 @@ export const TOOLS = [
     /** Fuller label for the nav drawer, where there's room to be specific. */
     navTitle: "Readiness Checklist",
     icon: mdiCheckboxMarkedOutline,
+  },
+  {
+    // Directly after the checklist, because it is the same data one step further
+    // on and it reads the checklist's completion dates to work at all.
+    id: "due",
+    title: "Due Dates",
+    navTitle: "Due Dates & Calendar",
+    icon: mdiCalendarClockOutline,
   },
   {
     id: "eval",

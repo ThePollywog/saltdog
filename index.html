@@ -8,6 +8,42 @@
       content="Condensed Navy Reserve quick links, knowledge references, and readiness tools for SELRES. Runs entirely in your browser."
     />
     <meta name="color-scheme" content="light dark" />
+
+    <!--
+      Icons. Every href is RELATIVE, matching `base: './'` in vite.config.js,
+      because this deploys to a GitHub Pages subpath (…github.io/saltdog/) where
+      a domain-root reference misses.
+
+      Vite rewrites a root-absolute "/favicon.svg" here to "./favicon.svg" at
+      build time, so authoring one is not actually the hazard it looks like —
+      verified by building with it and diffing dist/index.html. What Vite passes
+      through UNTOUCHED is a fully-qualified "https://…" href, and that is the
+      form that genuinely breaks. Relative is written by hand anyway: relying on
+      the rewrite means the file on disk and the file served disagree.
+
+      Both an SVG and an ICO, because they cover different ground: browsers that
+      support the SVG take it and get a sharp icon at any size, and everything
+      else — plus the Windows taskbar — falls back to the ICO's 48/32/16 frames.
+      The ICO is also what an unadorned request for /favicon.ico gets, which is
+      what some feed readers and link unfurlers ask for without reading the HTML.
+    -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/x-icon" sizes="48x48 32x32 16x16" href="favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+
+    <!--
+      Tints Android Chrome's address bar to meet the app bar. This is the value
+      for the pre-JS paint only; `useAppTheme` overwrites the content from
+      Vuetify's resolved `surface` colour once the app mounts.
+
+      EXACTLY ONE of these, and no `media` attribute. The obvious version — a
+      prefers-color-scheme pair — is wrong here, because an explicit theme choice
+      is persisted and beats the OS preference, so the media query would confi-
+      dently tint the address bar for a theme the user is not looking at. The
+      default below is dark to match `initialTheme()`, which also defaults dark.
+    -->
+    <meta name="theme-color" content="#10203A" />
+
     <title>SALTDOG — Navy Reservist Quick Reference</title>
   </head>
   <body>

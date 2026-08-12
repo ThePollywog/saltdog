@@ -36,6 +36,28 @@
  * These are pointers, not guarantees. Navy system names and addresses change
  * often, which is exactly why they are centralized here and why every surface
  * that shows one also shows the MyNavy HR / MNCC fallback.
+ *
+ * THE SECOND PASS added thirteen systems, sourced from the "Top Frequently Used
+ * Links" block on kellybeamsley.com/navy — a 25-year-old hand-maintained index
+ * whose curated top nine is a better list of what a reservist opens in a month
+ * than the original quick-links PDF was. Its 3,590 links were NOT imported: the
+ * value of this registry is that everything in it is something a SELRES actually
+ * touches, and a directory nobody can maintain is a directory of dead links.
+ *
+ * Every one of the thirteen was checked the same way: DNS first, then a request.
+ * portal.apps.mil, safe.apps.mil, nrh.navyreserve.navy.mil,
+ * rfmt.private.navyreserve.navy.mil, navyfamily.navy.mil, archives.gov,
+ * secnav.navy.mil/doni and home.cards.citidirect.com all answered 200.
+ * nrrm.nrre.navy.mil, mynavyassignment.dc3n.navy.mil and eha.health.mil resolve
+ * and then time out, which is the normal signature of a CAC-gated host seen from
+ * the commercial internet. esd.whs.mil answered 403.
+ *
+ * One host is a documented blind spot: www.mynavyhr.navy.mil WAF-blocks every
+ * non-browser client, INCLUDING its own root, which means no path on it can be
+ * distinguished from an invented one by request. So the `navadmin` entry's
+ * "References → Messages" step is asserted from the MyNavy HR site structure and
+ * corroborated by that reference index, not verified — the one claim in this file
+ * that a curl did not back up.
  */
 
 /**
@@ -97,6 +119,15 @@ export const SYSTEMS = [
     url: "https://www.navy.mil/",
     access: "navy.mil",
     cac: false,
+  },
+  {
+    id: "nrh",
+    name: "Navy Reserve Homeport",
+    desc: "Reserve-specific hub — NOSC pages, RESPERSMAN, forms, unit resources",
+    reach: "direct",
+    url: "https://nrh.navyreserve.navy.mil/",
+    access: "nrh.navyreserve.navy.mil (CAC)",
+    cac: true,
   },
 
   // --- Personnel / pay / records -------------------------------------------
@@ -163,6 +194,27 @@ export const SYSTEMS = [
     reach: "direct",
     url: "https://www.bol.navy.mil/",
     access: "bol.navy.mil (CAC)",
+    cac: true,
+  },
+
+  // --- Assignments & billets ----------------------------------------------
+  {
+    id: "rfmt",
+    name: "RFMT",
+    full: "Reserve Force Manpower Tool",
+    desc: "Search and apply for Reserve billets; see what your unit is manned at",
+    reach: "direct",
+    url: "https://rfmt.private.navyreserve.navy.mil/",
+    access: "rfmt.private.navyreserve.navy.mil (CAC)",
+    cac: true,
+  },
+  {
+    id: "mna",
+    name: "MyNavy Assignment (MNA)",
+    desc: "Negotiate orders — cycles open in October, January, April and July",
+    reach: "direct",
+    url: "https://mynavyassignment.dc3n.navy.mil/",
+    access: "mynavyassignment.dc3n.navy.mil (CAC)",
     cac: true,
   },
 
@@ -236,6 +288,26 @@ export const SYSTEMS = [
     access: "jko.jten.mil",
     cac: false,
   },
+  {
+    id: "nrrm",
+    name: "NRRM",
+    full: "Navy Reserve Readiness Module",
+    desc: "Unit and individual readiness reporting — the roll-up your NOSC reports on",
+    reach: "direct",
+    url: "https://nrrm.nrre.navy.mil/",
+    access: "nrrm.nrre.navy.mil (CAC)",
+    cac: true,
+  },
+  {
+    id: "eha",
+    name: "e-PHA (EHA)",
+    full: "Electronic Health Assessment",
+    desc: "Where you actually fill out the Periodic Health Assessment questionnaire",
+    reach: "direct",
+    url: "https://eha.health.mil/EHA",
+    access: "eha.health.mil/EHA (CAC)",
+    cac: true,
+  },
 
   // --- Admin / evals / awards ---------------------------------------------
   {
@@ -289,6 +361,16 @@ export const SYSTEMS = [
     url: "https://dtsproweb.defensetravel.osd.mil/",
     access: "dtsproweb.defensetravel.osd.mil (CAC)",
     cac: true,
+  },
+  {
+    id: "citi-gtc",
+    name: "Citi GTC",
+    full: "Government Travel Charge Card",
+    desc: "Statements and payments for the travel card your DTS voucher reimburses",
+    reach: "direct",
+    url: "https://home.cards.citidirect.com/",
+    access: "home.cards.citidirect.com",
+    cac: false,
   },
 
   // --- Benefits / health / transition -------------------------------------
@@ -347,6 +429,16 @@ export const SYSTEMS = [
     access: "tsp.gov",
     cac: false,
   },
+  {
+    id: "nfaas",
+    name: "NFAAS",
+    full: "Navy Family Accountability & Assessment System",
+    desc: "Muster after a disaster, and the contact data used to find you — review it twice a year",
+    reach: "direct",
+    url: "https://navyfamily.navy.mil/",
+    access: "navyfamily.navy.mil",
+    cac: false,
+  },
 
   // --- Security / IT -------------------------------------------------------
   {
@@ -376,6 +468,75 @@ export const SYSTEMS = [
     reach: "phone",
     url: "tel:+18668436624",
     access: "1-866-THE-NMCI",
+    cac: false,
+  },
+
+  // --- Connectivity & collaboration ----------------------------------------
+  {
+    id: "flank-speed",
+    name: "Flank Speed",
+    desc: "Navy Microsoft 365 — email, Teams, OneDrive, reachable from a personal machine",
+    reach: "direct",
+    // portal.apps.mil is the app launcher and the one that answered 200;
+    // webmail.apps.mil is the mail-only door and is named in the access line
+    // because that is the address people are given verbally.
+    url: "https://portal.apps.mil/",
+    access: "portal.apps.mil · webmail.apps.mil (CAC)",
+    cac: true,
+  },
+  {
+    id: "dod-safe",
+    name: "DoD SAFE",
+    desc: "Send files too large or too sensitive for email — CAC to send, no CAC to receive",
+    reach: "direct",
+    url: "https://safe.apps.mil/",
+    access: "safe.apps.mil (CAC to create a drop-off)",
+    cac: true,
+  },
+
+  // --- Policies & references -----------------------------------------------
+  //
+  // These four are the authorities behind everything else on this site. They are
+  // in the registry rather than hardcoded into data/directives.js for the usual
+  // reason: a library that moves should move in one place. data/directives.js
+  // names a library id, and the link resolves through here.
+  {
+    id: "doni",
+    name: "Navy Directives (DONI)",
+    full: "Department of the Navy Issuances",
+    desc: "The searchable library for SECNAVINST, OPNAVINST and BUPERSINST",
+    reach: "direct",
+    url: "https://www.secnav.navy.mil/doni/allinstructions.aspx",
+    access: "secnav.navy.mil/doni",
+    cac: false,
+  },
+  {
+    id: "navadmin",
+    name: "NAVADMIN / message library",
+    desc: "Where policy changes actually arrive — PFA cycles, advancement quotas, CMT",
+    reach: "portal",
+    via: "mynavy-hr",
+    then: "open References → Messages",
+    url: null,
+    access: "via MyNavy HR — open References → Messages",
+    cac: false,
+  },
+  {
+    id: "dod-issuances",
+    name: "DoD Issuances",
+    desc: "DoDD and DoDI series — the joint-level rules the Navy instructions implement",
+    reach: "direct",
+    url: "https://www.esd.whs.mil/DD/issuances/dodi/",
+    access: "esd.whs.mil/DD/issuances",
+    cac: false,
+  },
+  {
+    id: "evetrecs",
+    name: "eVetRecs (National Archives)",
+    desc: "Request a DD-214, archived OMPF, medals or medical records after separation",
+    reach: "direct",
+    url: "https://www.archives.gov/veterans/military-service-records",
+    access: "archives.gov/veterans",
     cac: false,
   },
 ];

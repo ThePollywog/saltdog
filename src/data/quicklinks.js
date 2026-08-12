@@ -46,8 +46,32 @@ const RAW_CATEGORIES = [
     links: [
       { id: "mynavy-hr" },
       { id: "mnp" },
+      { id: "nrh" },
       { id: "mncc" },
       { id: "navy-mil" },
+    ],
+  },
+  {
+    id: "connectivity",
+    heading: "Connectivity & Collaboration",
+    // Its own category rather than a couple of extra rows under Security/IT.
+    // Flank Speed is the answer to "I don't have a government laptop this
+    // weekend", which is a different question from "my account is locked" — and
+    // it is the first thing on the reference index's own top-nine list for the
+    // same reason.
+    keywords: [
+      "email",
+      "teams",
+      "flank speed",
+      "onedrive",
+      "file",
+      "share",
+      "telework",
+      "from home",
+    ],
+    links: [
+      { id: "flank-speed" },
+      { id: "dod-safe" },
     ],
   },
   {
@@ -73,6 +97,24 @@ const RAW_CATEGORIES = [
     ],
   },
   {
+    id: "assignments",
+    heading: "Assignments & Billets",
+    keywords: [
+      "billet",
+      "assignment",
+      "orders",
+      "negotiate",
+      "apply",
+      "unit",
+      "manning",
+      "cross assign",
+    ],
+    links: [
+      { id: "rfmt" },
+      { id: "mna" },
+    ],
+  },
+  {
     id: "readiness",
     heading: "Readiness / Training",
     keywords: [
@@ -92,6 +134,8 @@ const RAW_CATEGORIES = [
       { id: "fltmps", desc: "Fleet Training Management & Planning (training records / quotas)" },
       { id: "cool" },
       { id: "jko", desc: "Joint Knowledge Online (joint training)" },
+      { id: "nrrm" },
+      { id: "eha" },
     ],
   },
   {
@@ -104,6 +148,7 @@ const RAW_CATEGORIES = [
       { id: "ndaws" },
       { id: "twms", desc: "Total Workforce Management System (civilian / training / EEO)" },
       { id: "dts", desc: "Defense Travel System — travel orders & vouchers" },
+      { id: "citi-gtc" },
     ],
   },
   {
@@ -128,6 +173,32 @@ const RAW_CATEGORIES = [
       { id: "va" },
       { id: "tap", desc: "Transition Assistance Program" },
       { id: "tsp", desc: "TSP retirement account" },
+      { id: "nfaas" },
+    ],
+  },
+  {
+    id: "references",
+    heading: "Policies & References",
+    // The authorities, given a row in the directory rather than only appearing
+    // as citation chips on other pages. "Which instruction covers this" is a
+    // question people arrive with, and until now the directory had no answer to
+    // it at all.
+    keywords: [
+      "instruction",
+      "policy",
+      "reference",
+      "bupersinst",
+      "opnavinst",
+      "respersman",
+      "navadmin",
+      "regulation",
+      "dd214",
+    ],
+    links: [
+      { id: "doni" },
+      { id: "navadmin" },
+      { id: "dod-issuances" },
+      { id: "evetrecs" },
     ],
   },
   {

@@ -58,6 +58,28 @@ import { GROUPS as CHECKLIST_GROUPS, HOWTO } from "../src/data/checklist.js";
 import { CATEGORIES } from "../src/data/quicklinks.js";
 import { SYSTEMS, SYSTEM_BY_ID, systemUrl, viaLabel } from "../src/data/systems.js";
 import { deviceSummary, devicesFor, layoutRack } from "../src/lib/ribbons.js";
+import {
+  DIRECTIVES,
+  DIRECTIVE_BY_ID,
+  LIBRARIES,
+  directiveText,
+  directiveUrl,
+  directivesFor,
+  display,
+  libraryName,
+} from "../src/data/directives.js";
+import {
+  ICS_FILENAME,
+  addMonths,
+  buildIcs,
+  buildSchedule,
+  daysBetween,
+  dueFor,
+  nextMonthDay,
+  parseISO,
+  summarizeSchedule,
+  toISO,
+} from "../src/lib/due.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const corpus = buildCorpus();
@@ -179,6 +201,45 @@ const GOLDEN = [
   ["does my employer have to hold my job", "reservist-checklist#life-events"],
   ["how do I check my clearance", "reservist-checklist#howto-diss"],
   ["how many points is a drill weekend", "reservist-checklist#drill"],
+
+  // --- instructions and directives ----------------------------------------
+  // Two question shapes, because they exercise different halves of the
+  // retriever. A series number ("BUPERSINST 1610.10") tests the TOKENIZER —
+  // it only works because `tokenize()` splits `1610.10` into `1610` and `10`.
+  // A natural-language ask ("which instruction covers evals") tests the PHRASE
+  // ALIASES, since "which", "what" and "covers" are all stopwords and the
+  // question would otherwise reduce to the bare topic word and land on the
+  // subject-matter card instead of the authority.
+  //
+  // Coverage is one row per directive group, deliberately: a group whose
+  // keywords go stale is invisible until someone asks about that group, and
+  // "medical" answering while "travel" silently stopped is exactly the kind of
+  // partial rot a single spot-check misses.
+  ["BUPERSINST 1610.10", "directives#performance"],
+  ["BUPERSINST 1001.39", "directives#reserve"],
+  ["RESPERSMAN 1571-010", "directives#reserve"],
+  ["reserve personnel manual", "directives#reserve"],
+  ["DoDI 1215.13", "directives#reserve"],
+  ["what is EVALMAN", ["directives#performance", "eval-fitrep#rules", "eval-fitrep#schedule"]],
+  ["which instruction covers evals", "directives#performance"],
+  ["which instruction covers advancement", "directives#advancement"],
+  ["which instruction covers career development boards", ["directives#advancement", "reservist-checklist#howto-cway"]],
+  ["SECNAV M-1650.1", ["directives#awards", "awards#devices"]],
+  ["what instruction covers the PFA", ["directives#fitness", "reservist-checklist#howto-pfa"]],
+  ["opnavinst 6110.1", "directives#fitness"],
+  ["what instruction covers medical readiness", ["directives#medical", "reservist-checklist#howto-pha-imr"]],
+  ["what is the SORM", "directives#records"],
+  ["milpersman", "directives#records"],
+  ["joint travel regulations", "directives#travel"],
+  ["governing instruction for security clearance", ["directives#security", "reservist-checklist#howto-diss"]],
+  ["navy cybersecurity program instruction", "directives#security"],
+  ["which instruction covers annual training", ["directives#reserve", "reservist-checklist#howto-at-adt"]],
+  ["cite the instruction for AT waiver", ["directives#reserve", "reservist-checklist#howto-at-adt"]],
+  // Says "reg", not "instruction" — the one phrasing in this group that depends
+  // on the phrase alias rather than on the `instruction` token alias, and the
+  // only measured case where deleting that rule changes an answer. Pinned for
+  // exactly that reason: it is what makes the rule's presence observable.
+  ["which reg covers evals", "directives#performance"],
 ];
 
 /** Questions the scorer must ADMIT IT CANNOT ANSWER. */
@@ -340,6 +401,71 @@ describe("data integrity", () => {
       for (const [path, str] of strings(topic, topic.id)) {
         const m = ENTITY.exec(str);
         assert.equal(m, null, `HTML entity "${m?.[0]}" at ${path}: ${JSON.stringify(str.slice(0, 90))}`);
+      }
+    }
+  });
+
+  it("the favicon draws the real mdiAnchor path", async () => {
+    /**
+     * The path in favicon.svg is a COPY of @mdi/js's `mdiAnchor`, so it can rot
+     * in both directions: a hand-edit here, or an upstream redraw on the next
+     * @mdi/js bump. Neither shows up as a broken icon — an SVG with a subtly
+     * wrong path still renders something anchor-shaped at 16px.
+     *
+     * This is not a hypothetical. The first version of the file was typed out by
+     * hand and dropped "11 5A1 1 0 0 1" from the closing arc of the ring, which
+     * would have filled the hole in the shackle. It was caught by re-deriving the
+     * path from the module rather than by looking at it, and this test is that
+     * derivation kept in place.
+     */
+    const { mdiAnchor } = await import("@mdi/js");
+    const svg = readFileSync(new URL("../public/favicon.svg", import.meta.url), "utf8");
+    assert.ok(
+      svg.includes(mdiAnchor),
+      "public/favicon.svg does not contain the current mdiAnchor path — regenerate it from @mdi/js rather than editing it by hand",
+    );
+    // The tile must stay opaque: a transparent icon disappears into whichever
+    // browser chrome happens to match the glyph colour.
+    assert.match(svg, /<rect[^>]*fill="#0A2E5C"/, "favicon lost its opaque navy tile");
+  });
+
+  it("no British spellings in user-visible data", () => {
+    /**
+     * A US Navy reference that says "Organisation" reads as though it were
+     * transcribed from somewhere else, which is exactly the doubt this site
+     * cannot afford — and it is invisible to every other check here. Four had
+     * shipped before this test existed: "Organisation & personnel records" as a
+     * section heading, "watch organisation" and "authorisation" in directive
+     * prose, and "centred" in the ribbon-wear rules.
+     *
+     * WORSE THAN COSMETIC IN ONE CASE: the IMR entry's prose said
+     * "immunisations" while its own `keywords` said "immunization", so the word
+     * on screen was not the word the retriever indexed.
+     *
+     * Only unambiguous forms are listed. `analysis` is not British and was in an
+     * early draft of this list, where it flagged three correct J-8 bullets. If a
+     * legitimate proper noun ever needs one of these spellings — a NATO "Centre"
+     * — the fix is an exception here, not deleting the list.
+     */
+    const BRITISH = [
+      "organis", "authoris", "immunis", "recognis", "prioritis", "standardis",
+      "utilis", "minimis", "maximis", "analyse", "analysing",
+      "defence", "offence", "licence", "centre", "centred", "programme",
+      "enrolment", "fulfil", "practise", "catalogue", "judgement",
+      "behaviour", "colour", "honour", "favour", "labour", "neighbour",
+      "armour", "valour",
+    ];
+    for (const topic of ALL_TOPICS) {
+      for (const [path, str] of strings(topic, topic.id)) {
+        const lower = str.toLowerCase();
+        for (const brit of BRITISH) {
+          const at = lower.indexOf(brit);
+          assert.equal(
+            at,
+            -1,
+            `British spelling "${brit}" at ${path}: ${JSON.stringify(str.slice(Math.max(0, at - 30), at + 40))}`,
+          );
+        }
       }
     }
   });
@@ -639,6 +765,241 @@ describe("systems registry", () => {
     for (const h of HOWTO) {
       assert.ok(h.systems?.length, `procedure "${h.id}" names no system to do it in`);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 2c. The directive registry and the citations that point into it
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every `refs` array in the data tree, paired with where it came from.
+ *
+ * This exists for the same reason SYSTEM_REFS does, and the failure is worse.
+ * `directivesFor()` filters out ids it doesn't recognize, so a typo'd citation
+ * doesn't throw and doesn't warn — the chip simply isn't rendered. The page looks
+ * finished, the claim it was supposed to support is now unsourced, and nothing
+ * anywhere says so. A citation that silently disappears is the one defect this
+ * whole feature cannot tolerate, since the entire point of it is attribution.
+ */
+const DIRECTIVE_REFS = [
+  ...CHECKLIST_GROUPS.flatMap((g) =>
+    g.items.flatMap((i) => (i.refs ?? []).map((id) => [id, `checklist item ${i.id}`])),
+  ),
+  ...HOWTO.flatMap((h) => (h.refs ?? []).map((id) => [id, `procedure ${h.id}`])),
+  ...ALL_TOPICS.flatMap((t) => (t.refs ?? []).map((id) => [id, `topic ${t.id}`])),
+  ...ALL_TOPICS.flatMap((t) =>
+    t.sections.flatMap((s) => (s.refs ?? []).map((id) => [id, `section ${t.id}#${s.id}`])),
+  ),
+];
+
+describe("directive registry", () => {
+  it("every cited directive id exists", () => {
+    assert.ok(
+      DIRECTIVE_REFS.length >= 40,
+      `only ${DIRECTIVE_REFS.length} citations found — did the \`refs\` field get renamed?`,
+    );
+    for (const [id, where] of DIRECTIVE_REFS) {
+      assert.ok(DIRECTIVE_BY_ID.has(id), `${where} cites unknown directive "${id}"`);
+    }
+  });
+
+  it("directive ids are unique and stable-looking", () => {
+    const seen = new Set();
+    for (const d of DIRECTIVES) {
+      assert.ok(!seen.has(d.id), `duplicate directive id "${d.id}" — DIRECTIVE_BY_ID keeps only the last`);
+      seen.add(d.id);
+      assert.match(d.id, /^[a-z0-9-]+$/, `directive id "${d.id}" should be a lowercase slug`);
+      assert.equal(DIRECTIVE_BY_ID.get(d.id), d, `registry lookup broken for "${d.id}"`);
+      assert.ok(d.label, `directive "${d.id}" has no label`);
+      assert.ok(d.title, `directive "${d.id}" has no title`);
+      assert.ok(d.governs, `directive "${d.id}" does not say what it governs`);
+      assert.ok(d.keywords?.length, `directive "${d.id}" has no keywords — it would be unfindable`);
+    }
+  });
+
+  it("the revision letter is never baked into the label", () => {
+    /**
+     * The load-bearing convention of this module. BUPERSINST 1610.10 has been
+     * revised to G, then H, and will be revised again; the series number is what
+     * a citation means and the letter is a fact about today's edition. Storing
+     * "BUPERSINST 1610.10H" in `label` makes every consumer wrong at once when
+     * the next revision drops, and — worse — makes the search index wrong in a
+     * way nobody notices, because "1610.10" still matches.
+     *
+     * So: no `label` may end in a revision letter, and `display()` is the only
+     * thing allowed to recombine them.
+     */
+    for (const d of DIRECTIVES) {
+      assert.doesNotMatch(
+        d.label,
+        /\d[A-Z]$/,
+        `directive "${d.id}" has a revision letter in its label ("${d.label}") — put it in \`rev\``,
+      );
+      if (d.rev) {
+        assert.match(d.rev, /^[A-Z]$/, `directive "${d.id}" has a non-letter rev "${d.rev}"`);
+        assert.equal(display(d), `${d.label}${d.rev}`, `display() dropped the rev for "${d.id}"`);
+      } else {
+        assert.equal(display(d), d.label, `display() altered a rev-less label for "${d.id}"`);
+      }
+    }
+  });
+
+  it("every directive resolves to a real library and a real address", () => {
+    /**
+     * The indirection under test: a directive names a LIBRARY, the library names
+     * a SYSTEM, and systems.js owns the only copy of the address. Two links in
+     * that chain can rot independently, and a break in either renders the chip as
+     * plain text with no href — visually almost identical to a working one.
+     */
+    for (const d of DIRECTIVES) {
+      const lib = LIBRARIES[d.library];
+      assert.ok(lib, `directive "${d.id}" names unknown library "${d.library}"`);
+      assert.ok(SYSTEM_BY_ID.has(lib.system), `library "${d.library}" names unknown system "${lib.system}"`);
+      assert.equal(directiveUrl(d), systemUrl(lib.system), `directiveUrl() disagrees with the registry for "${d.id}"`);
+      assert.ok(directiveUrl(d), `directive "${d.id}" has no resolvable URL`);
+      assert.equal(libraryName(d), lib.name);
+    }
+    for (const [key, lib] of Object.entries(LIBRARIES)) {
+      assert.ok(lib.name, `library "${key}" has no name`);
+      assert.ok(lib.hint, `library "${key}" has no hint — the user is left to guess how to search it`);
+      assert.ok(
+        DIRECTIVES.some((d) => d.library === key),
+        `library "${key}" is unused — dead data that still has to be maintained`,
+      );
+    }
+  });
+
+  it("holds no document URL of its own", () => {
+    /**
+     * The same rule quicklinks.js and bangs.js live under, and the reason this
+     * module stores a library instead of a link. A deep path to a PDF on a `.mil`
+     * host is the single most rot-prone string in this domain, and the WAF on
+     * www.mynavyhr.navy.mil blocks every non-browser client — so a broken deep
+     * path there could never be caught by any check, including this suite. The
+     * only defence is not to have one.
+     */
+    const src = readFileSync(join(ROOT, "src/data/directives.js"), "utf8");
+    assert.doesNotMatch(src, /https?:\/\//, "directives.js has a literal URL — addresses belong in systems.js");
+  });
+
+  it("every parent reference resolves, and no directive parents itself", () => {
+    for (const d of DIRECTIVES) {
+      if (!d.parent) continue;
+      assert.ok(DIRECTIVE_BY_ID.has(d.parent), `directive "${d.id}" names unknown parent "${d.parent}"`);
+      assert.notEqual(d.parent, d.id, `directive "${d.id}" is its own parent`);
+      const parent = DIRECTIVE_BY_ID.get(d.parent);
+      assert.ok(!parent.parent, `"${d.id}" -> "${d.parent}" is a two-level chain; the UI only renders one`);
+    }
+  });
+
+  it("every directive appears in exactly one topic section", () => {
+    /**
+     * The topic's sections are derived by filtering DIRECTIVES on `group`, so a
+     * directive whose group doesn't match any group id vanishes from the site
+     * while remaining perfectly citable — the chip works, the page it links to
+     * doesn't list the document.
+     */
+    const topic = TOPIC_BY_ID.get("directives");
+    assert.ok(topic, "the directives topic is not registered");
+    const counts = new Map(DIRECTIVES.map((d) => [d.id, 0]));
+    for (const s of topic.sections) {
+      assert.equal(s.kind, "directives", `section "${s.id}" of the directives topic has kind "${s.kind}"`);
+      assert.ok(s.rows.length, `directive group "${s.id}" is empty`);
+      for (const d of s.rows) counts.set(d.id, (counts.get(d.id) ?? 0) + 1);
+    }
+    const orphans = [...counts].filter(([, n]) => n !== 1);
+    assert.deepEqual(
+      orphans.map(([id, n]) => `${id} (${n}x)`),
+      [],
+      "directives not listed exactly once on the topic page — check their `group`",
+    );
+  });
+
+  it("a directive's own entry outranks the sections that cite it", () => {
+    /**
+     * The ranking decision this feature turns on, asserted rather than assumed.
+     *
+     * Citations are folded into each record's BODY text at weight 1.0. Folding
+     * them into `keywords` (2.5) is the obvious move and it inverts the result:
+     * BUPERSINST 1001.39 is cited from eight places, so those eight sections
+     * would collectively outweigh the one record that actually describes it, and
+     * searching a series number would return everything except the document.
+     *
+     * Checked over every directive that is cited at least once, because the
+     * effect scales with citation count — the two or three most-cited documents
+     * are the ones that break first, and they are also the most likely searches.
+     */
+    const cited = new Set(DIRECTIVE_REFS.map(([id]) => id));
+    const topic = TOPIC_BY_ID.get("directives");
+    const home = new Map();
+    for (const s of topic.sections) for (const d of s.rows) home.set(d.id, `directives#${s.id}`);
+
+    for (const d of DIRECTIVES) {
+      if (!cited.has(d.id)) continue;
+      const hits = search(display(d), corpus, 1);
+      assert.equal(
+        hits[0]?.rec.id,
+        home.get(d.id),
+        `searching "${display(d)}" returned ${hits[0]?.rec.id} instead of the document's own entry ` +
+          `— citations are outweighing the thing they cite`,
+      );
+    }
+  });
+
+  it("a citation makes the citing section findable by the instruction number", () => {
+    /**
+     * The other half of the same trade-off. The check above guarantees citations
+     * don't dominate; this one guarantees they aren't inert. If `citedText()`
+     * were dropped from the body entirely both would look fine in the UI and the
+     * "what covers this" questions would keep working off the directives topic
+     * alone — while "1610.10" stopped reaching the EVAL cards it authorizes.
+     */
+    const ids = search("BUPERSINST 1610.10H", corpus, 6).map((h) => h.rec.id);
+    assert.ok(
+      ids.some((id) => id.startsWith("eval-fitrep#")),
+      `no EVAL section surfaced for BUPERSINST 1610.10H; got ${ids.join(", ")}`,
+    );
+    const awards = search("SECNAV M-1650.1", corpus, 6).map((h) => h.rec.id);
+    assert.ok(
+      awards.some((id) => id.startsWith("awards#")),
+      `no awards section surfaced for SECNAV M-1650.1; got ${awards.join(", ")}`,
+    );
+  });
+
+  it("directiveText covers every field a search would land on", () => {
+    for (const d of DIRECTIVES) {
+      const text = directiveText(d);
+      assert.ok(text.includes(d.label), `directiveText dropped the label of "${d.id}"`);
+      assert.ok(text.includes(d.title), `directiveText dropped the title of "${d.id}"`);
+      for (const k of d.keywords) {
+        assert.ok(text.includes(k), `directiveText dropped keyword "${k}" of "${d.id}"`);
+      }
+    }
+  });
+
+  it("directivesFor is order-preserving and drops unknowns without throwing", () => {
+    // The runtime behaviour the build-time check above compensates for. Pinned
+    // so a future "throw on unknown id" refactor can't turn a typo into a blank
+    // page mid-render.
+    const got = directivesFor(["milpersman", "not-a-real-directive", "jtr"]);
+    assert.deepEqual(got.map((d) => d.id), ["milpersman", "jtr"]);
+    assert.deepEqual(directivesFor(undefined), []);
+    assert.deepEqual(directivesFor([]), []);
+    assert.equal(directiveUrl(undefined), null);
+    assert.equal(display(null), "");
+  });
+
+  it("the authorities a reservist meets most are all present", () => {
+    /**
+     * A spot-check on content rather than shape. The registry could satisfy every
+     * structural rule above while having quietly lost the four documents that
+     * actually govern a SELRES's year, and no other test here would notice.
+     */
+    for (const id of ["bupersinst-1001-39", "respersman", "bupersinst-1610-10", "dodi-1215-13"]) {
+      assert.ok(DIRECTIVE_BY_ID.has(id), `the registry has lost "${id}"`);
+    }
+    assert.ok(DIRECTIVES.length >= 15, `only ${DIRECTIVES.length} directives registered`);
   });
 });
 
@@ -1442,6 +1803,542 @@ describe("awards and ribbon racks", () => {
       AWARD_CORRECTIONS.some((c) => /Warn in lieu/.test(c.note)),
       "the Silver/Gold Star legend typo is not footnoted",
     );
+  });
+});
+
+describe("due dates", () => {
+  /**
+   * The date math behind the Due Dates tool.
+   *
+   * This is the only feature on the site that renders a number nobody entered and
+   * asks the user to act on it, so it is tested at a different level of paranoia
+   * than the reference tables. Two classes of failure matter here and they are not
+   * equally bad:
+   *
+   *   A WRONG date is worse than NO date. Every "needs-anchor" / "unscheduled"
+   *   assertion below is really asserting that the code declined to guess, and
+   *   those are the ones to keep if this suite ever has to be cut down.
+   *
+   * All of it runs against injected `today` values. A test that called new Date()
+   * would pass for a while and then start failing on a specific calendar day,
+   * which is the worst possible way to learn about a bug in date code.
+   */
+  const d = (iso) => parseISO(iso);
+
+  it("parses ISO dates in LOCAL time, not UTC", () => {
+    /**
+     * `new Date("2026-08-12")` is UTC midnight, which renders as the 11th
+     * anywhere west of Greenwich. Every date in the tool would be one day early
+     * for most of the United States — visible only to users in those zones, and
+     * invisible in CI if CI runs at UTC.
+     *
+     * Asserting on the local getters is what makes this test independent of the
+     * TZ the suite happens to run under.
+     */
+    const dt = parseISO("2026-08-12");
+    assert.equal(dt.getFullYear(), 2026);
+    assert.equal(dt.getMonth(), 7);
+    assert.equal(dt.getDate(), 12);
+    assert.equal(dt.getHours(), 0, "not local midnight — an ISO string reached the Date constructor");
+    // Round-trip: the pair has to be inverse, or a stored completion date drifts
+    // by a day every time it is read and written.
+    assert.equal(toISO(dt), "2026-08-12");
+    for (const iso of ["2024-02-29", "2026-01-01", "2026-12-31", "2000-02-29"]) {
+      assert.equal(toISO(parseISO(iso)), iso, `round-trip failed for ${iso}`);
+    }
+  });
+
+  it("rejects malformed and impossible dates instead of rolling them over", () => {
+    // 2026-02-31 as a Date is 3 March. Accepting it would silently move a due
+    // date into the next month.
+    for (const bad of ["2026-02-31", "2026-13-01", "2026-00-10", "2025-02-29", "2026-2-3", "not a date", "", null, undefined, "20260812"]) {
+      assert.equal(parseISO(bad), null, `parseISO accepted ${JSON.stringify(bad)}`);
+    }
+    assert.equal(toISO(null), null);
+    assert.equal(toISO(new Date(NaN)), null);
+  });
+
+  it("adding months clamps to the end of a short month", () => {
+    // 31 Jan + 1 month is 28/29 Feb, not 3 March. This is what "monthly" means
+    // to a person, and the naive setMonth() gets it wrong.
+    assert.equal(toISO(addMonths(d("2026-01-31"), 1)), "2026-02-28");
+    assert.equal(toISO(addMonths(d("2024-01-31"), 1)), "2024-02-29", "leap year not handled");
+    assert.equal(toISO(addMonths(d("2026-03-31"), 1)), "2026-04-30");
+    assert.equal(toISO(addMonths(d("2026-08-31"), 6)), "2027-02-28");
+    // Ordinary cases, including the year roll and a full 12 months.
+    assert.equal(toISO(addMonths(d("2026-08-12"), 12)), "2027-08-12");
+    assert.equal(toISO(addMonths(d("2026-11-15"), 3)), "2027-02-15");
+    assert.equal(toISO(addMonths(d("2026-08-12"), 0)), "2026-08-12");
+    // Negative months are not used by the tool but must not silently corrupt.
+    assert.equal(toISO(addMonths(d("2026-01-15"), -1)), "2025-12-15");
+  });
+
+  it("day counts are calendar days, including across a DST boundary", () => {
+    /**
+     * US spring-forward 2026 is 8 March. The week containing it is 167 hours
+     * long, so any millisecond-difference implementation returns 6 for it. That
+     * is a one-day error that appears twice a year and only in some time zones —
+     * exactly the bug that gets closed as "cannot reproduce".
+     */
+    assert.equal(daysBetween(d("2026-03-05"), d("2026-03-12")), 7, "spring-forward week counted short");
+    assert.equal(daysBetween(d("2026-10-29"), d("2026-11-05")), 7, "fall-back week counted long");
+    assert.equal(daysBetween(d("2026-08-12"), d("2026-08-12")), 0);
+    assert.equal(daysBetween(d("2026-08-12"), d("2026-08-11")), -1, "past dates must count negative");
+    assert.equal(daysBetween(d("2026-01-01"), d("2027-01-01")), 365);
+    assert.equal(daysBetween(d("2024-01-01"), d("2025-01-01")), 366, "leap year miscounted");
+  });
+
+  it("a fiscal-year deadline is still due ON the deadline day", () => {
+    // On-or-after, not strictly after. Rolling on the day itself would tell
+    // someone with an unmet AT requirement that they have twelve months left,
+    // on the one day it matters most.
+    assert.equal(toISO(nextMonthDay("09-30", d("2026-09-30"))), "2026-09-30");
+    assert.equal(toISO(nextMonthDay("09-30", d("2026-09-29"))), "2026-09-30");
+    assert.equal(toISO(nextMonthDay("09-30", d("2026-10-01"))), "2027-09-30");
+    assert.equal(toISO(nextMonthDay("01-01", d("2026-12-31"))), "2027-01-01");
+    for (const bad of ["13-01", "09-32", "0930", "", null, "09"]) {
+      assert.equal(nextMonthDay(bad, d("2026-08-12")), null, `nextMonthDay accepted "${bad}"`);
+    }
+  });
+
+  it("a completion-based item counts forward from the date it was done", () => {
+    const item = { id: "annual.pfa", due: { basis: "completion", months: 12 } };
+    const r = dueFor(item, { completions: { "annual.pfa": "2026-05-01" }, today: d("2026-08-12") });
+    assert.equal(r.dueISO, "2027-05-01");
+    assert.equal(r.daysUntil, daysBetween(d("2026-08-12"), d("2027-05-01")));
+    assert.equal(r.status, "ok");
+    assert.equal(r.intervalMonths, 12);
+    assert.match(r.reason, /2026-05-01/, "the reason does not say where the date came from");
+  });
+
+  it("an item never completed asks for a date instead of inventing one", () => {
+    /**
+     * The single most important assertion in this block. With no completion date
+     * there is no honest answer, and the tempting fallback — treat "never" as
+     * "due now" — paints a brand-new user's screen entirely red on first visit
+     * and teaches them to ignore the colour permanently.
+     */
+    const item = { id: "annual.pfa", due: { basis: "completion", months: 12 } };
+    const r = dueFor(item, { completions: {}, today: d("2026-08-12") });
+    assert.equal(r.status, "needs-anchor");
+    assert.equal(r.dueISO, null, "produced a due date with nothing to compute it from");
+    assert.equal(r.dueDate, null);
+    assert.equal(r.daysUntil, null, "a null due date must not yield a day count");
+    assert.match(r.reason, /check this off/i, "the reason does not tell the user how to fix it");
+    // A malformed stored date is the same situation, not a crash and not a guess.
+    const bad = dueFor(item, { completions: { "annual.pfa": "not-a-date" }, today: d("2026-08-12") });
+    assert.equal(bad.status, "needs-anchor");
+    assert.equal(bad.completedISO, null);
+  });
+
+  it("overdue, due-soon and ok are decided by the interval's own warn window", () => {
+    /**
+     * One global warn window is wrong at both ends: 60 days on a monthly task
+     * means it is permanently amber, and 7 days on a PHA is useless when the
+     * appointment takes three weeks to get. So the window scales with the
+     * interval, and the boundaries are pinned exactly — off-by-one here is a
+     * status that flips a day early or late, which reads as flakiness.
+     */
+    const annual = { id: "x", due: { basis: "completion", months: 12 } };
+    const at = (today) => dueFor(annual, { completions: { x: "2026-01-01" }, today: d(today) }).status;
+    assert.equal(at("2026-06-01"), "ok", "far from due");
+    assert.equal(at("2026-11-01"), "ok", "61 days out is not yet due-soon");
+    assert.equal(at("2026-11-02"), "due-soon", "60 days out is the start of the warn window");
+    assert.equal(at("2026-12-31"), "due-soon", "the day before is still due-soon");
+    assert.equal(at("2027-01-01"), "due-soon", "the due date itself is due, not overdue");
+    assert.equal(at("2027-01-02"), "overdue");
+
+    // Monthly gets a 7-day window; quarterly 21. Same code, different answer.
+    const monthly = { id: "y", due: { basis: "completion", months: 1 } };
+    const my = (today) => dueFor(monthly, { completions: { y: "2026-08-01" }, today: d(today) });
+    assert.equal(my("2026-08-24").status, "ok");
+    assert.equal(my("2026-08-25").status, "due-soon");
+    assert.equal(my("2026-08-01").warnDays, 7);
+    const quarterly = dueFor({ id: "z", due: { basis: "completion", months: 3 } }, { completions: { z: "2026-08-01" }, today: d("2026-08-12") });
+    assert.equal(quarterly.warnDays, 21);
+  });
+
+  it("an anniversary item is keyed to the RC year, not the calendar year", () => {
+    /**
+     * The classic reservist-tool bug, in date form. A good year runs from the
+     * anniversary date; anchoring it to January or to 1 October produces a
+     * confidently wrong deadline for almost everybody.
+     */
+    const item = { id: "annual.goodyear", due: { basis: "anniversary" } };
+    const ctx = { anniversaryMonthDay: "10-01", today: d("2026-08-12") };
+
+    // Nothing recorded: the anniversary that already opened is the deadline, and
+    // it reads as overdue — which it is.
+    const none = dueFor(item, { ...ctx, completions: {} });
+    assert.equal(none.dueISO, "2025-10-01");
+    assert.equal(none.status, "overdue");
+
+    // Done inside the current RC year: the next anniversary is the deadline.
+    const done = dueFor(item, { ...ctx, completions: { "annual.goodyear": "2026-02-15" } });
+    assert.equal(done.dueISO, "2026-10-01");
+    assert.notEqual(done.status, "overdue");
+
+    // Done LAST RC year: still owed for this one.
+    const stale = dueFor(item, { ...ctx, completions: { "annual.goodyear": "2025-06-01" } });
+    assert.equal(stale.dueISO, "2025-10-01");
+    assert.equal(stale.status, "overdue");
+
+    /**
+     * THE CASES THAT SEPARATE "RC YEAR" FROM "CALENDAR YEAR", added because the
+     * three above do not: with a 1 October anniversary, a completion in February
+     * 2026 and one in June 2025 fall on the same side of both boundaries, so a
+     * calendar-year implementation passes all three. It was mutated in and it did.
+     *
+     * The two below straddle. With an autumn anniversary, an October–December
+     * completion is in the NEXT RC year but the SAME calendar year; with a spring
+     * anniversary, a January completion is in the PREVIOUS RC year but the same
+     * calendar year. The second is the dangerous direction — a calendar-year bug
+     * reports "on track" to someone who is actually overdue.
+     */
+    const autumn = dueFor(item, { ...ctx, completions: { "annual.goodyear": "2025-11-20" } });
+    assert.equal(autumn.dueISO, "2026-10-01", "November 2025 is inside the RC year that opened 2025-10-01");
+    assert.notEqual(autumn.status, "overdue");
+
+    const spring = dueFor(item, {
+      anniversaryMonthDay: "03-01",
+      today: d("2026-08-12"),
+      completions: { "annual.goodyear": "2026-01-15" },
+    });
+    assert.equal(spring.dueISO, "2026-03-01", "January 2026 precedes the RC year that opened 2026-03-01");
+    assert.equal(spring.status, "overdue", "a calendar-year reading would call this on track");
+  });
+
+  it("an anniversary item with no anniversary on file says so", () => {
+    const item = { id: "annual.goodyear", due: { basis: "anniversary" } };
+    for (const anniversaryMonthDay of ["", null, undefined, "garbage", "13-40"]) {
+      const r = dueFor(item, { anniversaryMonthDay, completions: {}, today: d("2026-08-12") });
+      assert.equal(r.status, "needs-anchor", `anniversary "${anniversaryMonthDay}" produced ${r.status}`);
+      assert.equal(r.dueISO, null, "guessed a good-year deadline with no anniversary date");
+      assert.match(r.reason, /anniversary/i);
+    }
+  });
+
+  it("a fiscal-year item arrives whether or not anything is checked off", () => {
+    // AT is the only item that works this way: 30 September is the deadline
+    // regardless of history, so unlike a completion item it must NOT fall back
+    // to needs-anchor when nothing is recorded.
+    const item = { id: "annual.at", due: { basis: "fiscalYear", monthDay: "09-30" } };
+    const fresh = dueFor(item, { completions: {}, today: d("2026-08-12") });
+    assert.equal(fresh.dueISO, "2026-09-30");
+    assert.equal(fresh.status, "due-soon");
+    assert.notEqual(fresh.status, "needs-anchor", "a fixed deadline needs no anchor");
+
+    // Completed inside FY26 satisfies FY26; the deadline moves to FY27.
+    const met = dueFor(item, { completions: { "annual.at": "2026-07-04" }, today: d("2026-08-12") });
+    assert.equal(met.dueISO, "2027-09-30");
+    assert.equal(met.status, "ok");
+
+    /**
+     * The fiscal-year boundary itself, both sides, because the intuitive reading
+     * is wrong and this test caught it being written wrong: a completion in
+     * NOVEMBER 2025 is in FY26, not FY25. FY26 runs 1 Oct 2025 -> 30 Sep 2026, so
+     * an AT performed in November has already satisfied the September deadline
+     * that is still ten months away on the calendar.
+     */
+    const novemberIsThisFy = dueFor(item, { completions: { "annual.at": "2025-11-15" }, today: d("2026-08-12") });
+    assert.equal(novemberIsThisFy.dueISO, "2027-09-30", "November 2025 is FY26 and satisfies it");
+    // Genuinely last fiscal year: still owed for this one.
+    const lastFy = dueFor(item, { completions: { "annual.at": "2025-06-01" }, today: d("2026-08-12") });
+    assert.equal(lastFy.dueISO, "2026-09-30", "an FY25 completion must not satisfy FY26");
+    assert.equal(lastFy.status, "due-soon");
+  });
+
+  it("an item with no `due` is event-driven, not overdue", () => {
+    /**
+     * The drill and life-event groups carry no `due` at all, and that absence is
+     * a decision. "Update DEERS after a life event" has no computable deadline,
+     * and rendering an invented one in the same red as a real PHA date would
+     * discredit both.
+     */
+    const r = dueFor({ id: "life.deers" }, { completions: {}, today: d("2026-08-12"), cadence: "When it happens" });
+    assert.equal(r.status, "unscheduled");
+    assert.equal(r.dueISO, null);
+    assert.match(r.reason, /When it happens/, "the group's own cadence is the honest explanation");
+    // And with no cadence to fall back on it still explains itself.
+    assert.match(dueFor({ id: "x" }, {}).reason, /\S/);
+  });
+
+  it("an unrecognized basis surfaces as a data bug, not as 'no schedule'", () => {
+    // Failing open here would make a typo'd basis indistinguishable from a
+    // deliberately undated item, and the item would quietly stop being tracked.
+    const r = dueFor({ id: "x", due: { basis: "quarterlyish" } }, { today: d("2026-08-12") });
+    assert.equal(r.status, "needs-anchor");
+    assert.notEqual(r.status, "unscheduled");
+    assert.match(r.reason, /quarterlyish/);
+  });
+
+  it("every `due` in the checklist uses a basis the code implements", () => {
+    /**
+     * The data-side half of the check above. `dueFor` handles three bases; a
+     * fourth invented in checklist.js would render every affected row as "Needs a
+     * date" with a message about an unknown basis, which is legible in a test and
+     * baffling on the page.
+     */
+    const KNOWN = new Set(["completion", "anniversary", "fiscalYear"]);
+    let dated = 0;
+    for (const g of CHECKLIST_GROUPS) {
+      for (const i of g.items) {
+        if (!i.due) continue;
+        dated += 1;
+        assert.ok(KNOWN.has(i.due.basis), `checklist item "${i.id}" has unknown due basis "${i.due.basis}"`);
+        if (i.due.basis === "completion") {
+          assert.ok(Number.isInteger(i.due.months) && i.due.months > 0, `item "${i.id}" has a bad interval`);
+        }
+        if (i.due.basis === "fiscalYear") {
+          assert.ok(nextMonthDay(i.due.monthDay, d("2026-08-12")), `item "${i.id}" has a bad monthDay`);
+        }
+      }
+    }
+    assert.ok(dated >= 15, `only ${dated} checklist items are dated — did the \`due\` field get renamed?`);
+  });
+
+  it("the schedule sorts by urgency and every row keeps its item", () => {
+    const rows = buildSchedule(CHECKLIST_GROUPS, {
+      completions: { "annual.pfa": "2024-01-01", "monthly.les": "2026-08-10" },
+      anniversaryMonthDay: "10-01",
+      today: d("2026-08-12"),
+    });
+    assert.equal(rows.length, ALL_ITEM_IDS.length, "the schedule lost or duplicated a checklist item");
+
+    const ORDER = ["overdue", "due-soon", "ok", "needs-anchor", "unscheduled"];
+    let last = -1;
+    for (const r of rows) {
+      const rank = ORDER.indexOf(r.status);
+      assert.ok(rank >= 0, `row "${r.itemId}" has unknown status "${r.status}"`);
+      assert.ok(rank >= last, `status ${r.status} appeared after a later group — sort is wrong`);
+      last = rank;
+      assert.ok(r.item, `row "${r.itemId}" lost its item reference`);
+      assert.ok(r.groupHeading, `row "${r.itemId}" lost its group heading`);
+    }
+    // Within a status, soonest first.
+    const overdue = rows.filter((r) => r.status === "overdue");
+    for (let i = 1; i < overdue.length; i++) {
+      assert.ok(overdue[i - 1].daysUntil <= overdue[i].daysUntil, "overdue rows are not soonest-first");
+    }
+    // A PFA two and a half years stale must be in that first group.
+    assert.equal(rows.find((r) => r.itemId === "annual.pfa").status, "overdue");
+
+    const sum = summarizeSchedule(rows);
+    assert.equal(sum.total, rows.length);
+    assert.equal(
+      sum.overdue + sum["due-soon"] + sum.ok + sum["needs-anchor"] + sum.unscheduled,
+      rows.length,
+      "the summary counts do not add up to the row count",
+    );
+    assert.equal(sum.scheduled, sum.overdue + sum["due-soon"] + sum.ok);
+  });
+
+  it("the empty-state schedule invents nothing", () => {
+    // What a first-time visitor sees: no completions, no anniversary. Not one
+    // date may be produced from that.
+    const rows = buildSchedule(CHECKLIST_GROUPS, { completions: {}, anniversaryMonthDay: "", today: d("2026-08-12") });
+    for (const r of rows) {
+      if (r.basis === "fiscalYear") continue; // a fixed deadline is knowable
+      assert.equal(r.dueISO, null, `"${r.itemId}" produced a date from an empty profile`);
+      assert.ok(
+        r.status === "needs-anchor" || r.status === "unscheduled",
+        `"${r.itemId}" is ${r.status} on a blank profile`,
+      );
+    }
+    assert.equal(summarizeSchedule(rows).overdue, 0, "a brand-new user was shown overdue items");
+  });
+
+  it("the .ics is well-formed RFC 5545 that a strict parser will accept", () => {
+    const rows = buildSchedule(CHECKLIST_GROUPS, {
+      completions: { "annual.pfa": "2026-01-15", "monthly.points": "2026-08-01" },
+      anniversaryMonthDay: "10-01",
+      today: d("2026-08-12"),
+    });
+    const { ics, exported, skipped } = buildIcs(rows, { stamp: new Date(Date.UTC(2026, 7, 12, 13, 45, 30)) });
+
+    assert.ok(exported > 0, "nothing was exported");
+    assert.equal(exported + skipped, rows.length, "the export accounting does not add up");
+    assert.equal(exported, rows.filter((r) => r.dueISO).length, "a dated row was skipped");
+
+    // Structure.
+    assert.ok(ics.startsWith("BEGIN:VCALENDAR\r\n"), "no VCALENDAR opening");
+    assert.ok(ics.endsWith("END:VCALENDAR\r\n"), "missing the trailing CRLF the spec requires");
+    assert.match(ics, /^VERSION:2\.0\r$/m);
+    assert.equal((ics.match(/BEGIN:VEVENT/g) ?? []).length, exported);
+    assert.equal((ics.match(/END:VEVENT/g) ?? []).length, exported);
+
+    // CRLF everywhere. A bare LF is the classic hand-rolled-ics defect: it looks
+    // right in an editor and some clients reject the whole file.
+    assert.equal(ics.split("\n").length - 1, ics.split("\r\n").length - 1, "a bare LF is present");
+
+    // The 75-OCTET fold, counted in bytes. Em-dashes in the labels are three
+    // bytes each, so a character-counted fold passes a naive check and still
+    // overruns for real clients.
+    for (const line of ics.split("\r\n")) {
+      const bytes = new TextEncoder().encode(line).length;
+      assert.ok(bytes <= 75, `line exceeds 75 octets (${bytes}): ${line.slice(0, 40)}...`);
+    }
+    // And the fold must be reversible — unfolding has to restore the original
+    // text, or the fold has eaten or added characters.
+    assert.match(ics.replace(/\r\n /g, ""), /SUMMARY:.+ — due/, "unfolding did not restore a SUMMARY");
+
+    // All-day events are half-open: DTEND is the day AFTER DTSTART. Equal dates
+    // give a zero-length event that some clients drop and others misplace.
+    const starts = [...ics.matchAll(/DTSTART;VALUE=DATE:(\d{8})/g)].map((m) => m[1]);
+    const ends = [...ics.matchAll(/DTEND;VALUE=DATE:(\d{8})/g)].map((m) => m[1]);
+    assert.equal(starts.length, exported);
+    assert.equal(ends.length, exported);
+    for (let i = 0; i < starts.length; i++) {
+      assert.notEqual(ends[i], starts[i], "DTEND equals DTSTART — the event has zero length");
+      const s = starts[i];
+      const expected = toISO(new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8) + 1)).replace(/-/g, "");
+      assert.equal(ends[i], expected, "DTEND is not the day after DTSTART");
+    }
+
+    // DTSTAMP is UTC and comes from the injected stamp, not from the clock.
+    assert.match(ics, /DTSTAMP:20260812T134530Z/);
+
+    // Stable UIDs, so re-importing updates rather than duplicates.
+    const uids = [...ics.matchAll(/UID:(.+)\r/g)].map((m) => m[1]);
+    assert.equal(new Set(uids).size, uids.length, "duplicate UIDs — a re-import would collide");
+    for (const uid of uids) assert.match(uid, /^saltdog-[a-z]+\.[a-z0-9-]+@saltdog\.invalid$/);
+    // Deterministic across runs, given the same inputs — the property that makes
+    // re-import an update.
+    const again = buildIcs(rows, { stamp: new Date(Date.UTC(2026, 7, 12, 13, 45, 30)) });
+    assert.equal(again.ics, ics, "the export is not deterministic");
+
+    assert.match(ICS_FILENAME, /\.ics$/);
+  });
+
+  it("the .ics folds by octet, not by character", () => {
+    /**
+     * Added because the check above SURVIVED the mutation it was written for.
+     * Replacing `bytes.length <= 75` with `line.length <= 75` in `fold()` left
+     * every real checklist label passing, because none of them happens to land in
+     * the gap between the two counts — so the assertion was correct, watching the
+     * right property, and completely unable to fail.
+     *
+     * The em-dash this site's copy is full of is one character and three octets.
+     * The fixture below is built to sit in that gap on purpose, and it asserts its
+     * own preconditions: if a future edit moves it back out of the gap, this says
+     * so instead of quietly going toothless again.
+     *
+     * The padding sweep is what tests the multi-byte BACKOFF specifically. Folding
+     * at a fixed 75th octet will land mid-em-dash for some lengths and not others,
+     * so one fixture can't reach it; sweeping shifts the boundary through the
+     * character and a fold that splits a UTF-8 sequence produces U+FFFD, which
+     * the round-trip catches.
+     */
+    const enc = (s) => new TextEncoder().encode(s).length;
+
+    for (let pad = 0; pad <= 8; pad++) {
+      // 65 characters, 81 octets — inside the gap, with room for the sweep.
+      const label = `PHA — dental — IMR — labs — HIV — DNA — MRRS — NOSC${"x".repeat(pad)}`;
+      const summaryLine = `SUMMARY:${label} — due`;
+      if (pad === 0) {
+        assert.ok(
+          summaryLine.length <= 75,
+          `fixture no longer sits under the CHARACTER limit (${summaryLine.length}) — it cannot detect a char-counted fold`,
+        );
+        assert.ok(
+          enc(summaryLine) > 75,
+          `fixture no longer exceeds the OCTET limit (${enc(summaryLine)}) — it cannot detect a char-counted fold`,
+        );
+      }
+
+      const { ics } = buildIcs(
+        [{ itemId: "test.item", dueDate: d("2026-09-30"), intervalMonths: 12, warnDays: 60, reason: "r", item: { label } }],
+        { stamp: new Date(Date.UTC(2026, 0, 1)) },
+      );
+
+      for (const line of ics.split("\r\n")) {
+        assert.ok(enc(line) <= 75, `pad=${pad}: line is ${enc(line)} octets: ${line}`);
+      }
+      // Unfolding must restore the label byte-for-byte. A fold that split a
+      // multi-byte sequence leaves U+FFFD here, which no octet-length check sees.
+      const unfolded = ics.replace(/\r\n /g, "");
+      assert.ok(!unfolded.includes("�"), `pad=${pad}: the fold split a UTF-8 sequence`);
+      assert.ok(
+        unfolded.includes(`SUMMARY:${label} — due`),
+        `pad=${pad}: unfolding did not restore the summary`,
+      );
+    }
+  });
+
+  it("the .ics escapes text and recurs at the right interval", () => {
+    const rows = [
+      {
+        itemId: "test.item",
+        dueDate: d("2026-09-30"),
+        dueISO: "2026-09-30",
+        intervalMonths: 12,
+        warnDays: 60,
+        reason: "Because; of, a\\ reason",
+        item: { id: "test.item", label: "Semi; colon, and\\ backslash", note: "line one\nline two" },
+      },
+    ];
+    const { ics } = buildIcs(rows, { stamp: new Date(Date.UTC(2026, 0, 1)) });
+    const unfolded = ics.replace(/\r\n /g, "");
+
+    // `;` and `,` are RFC 5545 STRUCTURED separators. Unescaped, a comma in a
+    // label makes the parser read the rest of the SUMMARY as a second value and
+    // the event title is silently truncated.
+    assert.match(unfolded, /SUMMARY:Semi\\; colon\\, and\\\\ backslash — due\r/);
+    assert.match(unfolded, /line one\\nline two/, "a newline was not escaped to \\n");
+    assert.doesNotMatch(unfolded.replace(/\\[;,\\n]/g, ""), /^SUMMARY:[^\r]*[;,]/m, "an unescaped separator survived");
+
+    assert.match(ics, /RRULE:FREQ=YEARLY/);
+    assert.match(ics, /TRIGGER:-P60D/, "the alarm does not match the page's warn window");
+
+    const monthly = buildIcs([{ ...rows[0], intervalMonths: 1 }], { stamp: new Date(Date.UTC(2026, 0, 1)) }).ics;
+    assert.match(monthly, /RRULE:FREQ=MONTHLY\r/);
+    const quarterly = buildIcs([{ ...rows[0], intervalMonths: 3 }], { stamp: new Date(Date.UTC(2026, 0, 1)) }).ics;
+    assert.match(quarterly, /RRULE:FREQ=MONTHLY;INTERVAL=3/);
+
+    // Alarms are opt-out, and opting out must remove the whole VALARM block
+    // rather than leave an empty one.
+    const silent = buildIcs(rows, { stamp: new Date(Date.UTC(2026, 0, 1)), alarms: false }).ics;
+    assert.doesNotMatch(silent, /VALARM/);
+  });
+
+  it("undated rows are skipped and COUNTED, never quietly dropped", () => {
+    /**
+     * Exporting 14 of 31 items in silence reads as "it's all on your calendar
+     * now", which is the one impression this feature must not create. The count
+     * is what the UI puts in the snackbar, so it is part of the contract.
+     */
+    const rows = [
+      { itemId: "a", dueDate: d("2026-09-30"), intervalMonths: 12, warnDays: 60, item: { label: "A" } },
+      { itemId: "b", dueDate: null, status: "needs-anchor", item: { label: "B" } },
+      { itemId: "c", dueDate: null, status: "unscheduled", item: { label: "C" } },
+    ];
+    const r = buildIcs(rows, { stamp: new Date(Date.UTC(2026, 0, 1)) });
+    assert.equal(r.exported, 1);
+    assert.equal(r.skipped, 2);
+    assert.doesNotMatch(r.ics, /SUMMARY:B/, "an undated row was exported anyway");
+
+    // Nothing at all is still a valid, empty calendar rather than a crash.
+    const empty = buildIcs([], {});
+    assert.equal(empty.exported, 0);
+    assert.match(empty.ics, /^BEGIN:VCALENDAR\r\n[\s\S]*END:VCALENDAR\r\n$/);
+    assert.equal(buildIcs(null, {}).exported, 0);
+    assert.equal(buildSchedule(null, {}).length, 0);
+    assert.equal(summarizeSchedule(null).total, 0);
+  });
+
+  it("the tool stores nothing of its own", () => {
+    /**
+     * The Due Dates tool reads the `checklist` and `points` stores and must never
+     * open a third. A `due:` key of its own would immediately disagree with the
+     * two screens it derives from, and "which of these is right about my PHA" is
+     * a worse problem than not having the page.
+     */
+    const src = readFileSync(join(ROOT, "src/components/tools/DueDatesTool.vue"), "utf8");
+    const keys = [...src.matchAll(/useLocalStore\("([a-z]+)"/g)].map((m) => m[1]).sort();
+    assert.deepEqual(keys, ["checklist", "points"], "DueDatesTool opened an unexpected store");
+    // And it must not do date math locally — that is what makes lib/due.js
+    // testable at all, and a component is not testable in this project.
+    assert.doesNotMatch(src, /setMonth|setDate|getTime\(\)|86400000/, "date arithmetic leaked into the component");
   });
 });
 

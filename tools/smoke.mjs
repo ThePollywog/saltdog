@@ -37,7 +37,14 @@ const ROUTES = [
   ["#/knowledge/joint-codes", "Joint"],
   ["#/knowledge/phonetic-alphabet", "Phonetic"],
   ["#/knowledge/awards", "Precedence"],
+  ["#/knowledge/directives", "BUPERSINST"],
+  // Reachable even though /quick-links is the front door for it: the assistant
+  // cites `quicklinks#personnel`, and its "Open in Knowledge" deep-link goes
+  // here. The coverage guard below is what surfaced that this route existed and
+  // had never once been loaded.
+  ["#/knowledge/quicklinks?a=personnel", "Navy System Quick Links"],
   ["#/tools/checklist", "Readiness Checklist"],
+  ["#/tools/due", "Due Dates & Calendar"],
   ["#/tools/eval", "EVAL / FITREP Due Date"],
   ["#/tools/points", "Good Years"],
   ["#/tools/phonetic", "Phonetic Speller"],
@@ -47,6 +54,30 @@ const ROUTES = [
   ["#/knowledge/does-not-exist", "Knowledge"], // bad topic id -> index, not blank
   ["#/nonsense", "quick-reference desk"], // catch-all
 ];
+
+/**
+ * Assert the list above covers every registered tool and topic.
+ *
+ * The expectation strings are hand-written on purpose — "does the DOM actually
+ * contain BUPERSINST" is a real check and a derived one could only assert that a
+ * page rendered its own title. But a hand-written list silently stops covering
+ * new work, and it did: the Due Dates tool and the Directives topic both shipped
+ * and neither was smoked, while the run still reported 40/40 clean. So the LIST
+ * stays hand-written and its COMPLETENESS is derived.
+ */
+async function coverageGaps() {
+  const { TOOLS } = await import("../src/data/tools.js");
+  const { ALL_TOPICS } = await import("../src/data/index.js");
+  const routes = ROUTES.map(([r]) => r);
+  const gaps = [];
+  for (const t of TOOLS) {
+    if (!routes.some((r) => r.startsWith(`#/tools/${t.id}`))) gaps.push(`#/tools/${t.id}`);
+  }
+  for (const t of ALL_TOPICS) {
+    if (!routes.some((r) => r.startsWith(`#/knowledge/${t.id}`))) gaps.push(`#/knowledge/${t.id}`);
+  }
+  return gaps;
+}
 
 /* ------------------------------------------------------------------ servers */
 
@@ -251,6 +282,9 @@ const record = (label, problems) => {
 
 /** Every route mounts the shell and renders its own content. */
 async function checkRoutes() {
+  const gaps = await coverageGaps();
+  record("route coverage", gaps.map((g) => `${g} is registered but never smoked`));
+
   for (const [route, expect] of ROUTES) {
     const problems = await withPage(`${BASE}/${route}`, async (page) => {
       const found = await page.waitFor(
@@ -465,6 +499,153 @@ async function checkIconButtons() {
     for (const b of bad || []) page.fail(`icon button: ${b}`);
   });
   record("icon buttons: render a glyph and have a name", problems);
+}
+
+/**
+ * The icons must actually be there.
+ *
+ * A broken favicon is the definition of a silent defect: the tab shows a generic
+ * page glyph, nothing logs to the console, no build step complains, and the
+ * "before" and "after" states look identical to anyone not watching the network
+ * panel. This site is served from a GitHub Pages SUBPATH, so an href that misses
+ * the base 404s in production while working perfectly on localhost, where the app
+ * happens to sit at the root.
+ *
+ * The hrefs are read out of the live DOM and fetched through the browser's own URL
+ * resolution rather than string-compared against a list here, so the base is
+ * actually exercised. One honest limit on the `startsWith("/")` branch: Vite
+ * rewrites root-absolute hrefs in index.html to "./" at build time, so that case
+ * is unreachable from the HTML and the branch survives being mutated in. It is
+ * kept for hrefs injected at runtime, which Vite never sees. The branch with real
+ * teeth is the fully-qualified "https://…" one, which Vite passes through
+ * untouched — mutated in, it fails on both the relativity and the fetch.
+ */
+async function checkFavicon() {
+  const problems = await withPage(`${BASE}/`, async (page) => {
+    await page.waitFor('!!document.querySelector(".salt-fab")');
+
+    const icons = await page.evaluate(`(() => {
+      const out = [];
+      for (const l of document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"]')) {
+        // .href is the RESOLVED absolute URL; .getAttribute is what was authored.
+        out.push({ rel: l.getAttribute('rel'), raw: l.getAttribute('href'), url: l.href });
+      }
+      return out;
+    })()`);
+
+    if (!icons || icons.length < 2) {
+      page.fail(`expected an svg icon, an ico, and a touch icon; found ${icons?.length ?? 0}`);
+      return;
+    }
+
+    for (const icon of icons) {
+      if (/^(https?:)?\/\//.test(icon.raw) || icon.raw.startsWith("/")) {
+        page.fail(`${icon.rel} href "${icon.raw}" is not relative — it will 404 under a subpath`);
+      }
+      const probe = await page.evaluate(
+        `fetch(${JSON.stringify(icon.url)}).then(async r =>
+           r.status + ':' + (r.headers.get('content-type') || '?') + ':' + (await r.blob()).size)
+         .catch(e => 'threw:' + e.message)`,
+      );
+      const [status, type, size] = String(probe).split(":");
+      if (status !== "200") {
+        page.fail(`${icon.rel} ${icon.raw} returned ${probe}`);
+        continue;
+      }
+      if (!/^image\//.test(type)) {
+        page.fail(`${icon.rel} ${icon.raw} served as "${type}", not an image type`);
+      }
+      // A zero-length or near-empty file still returns 200. The ICO holds three
+      // frames and the touch icon is 180px, so both are comfortably over 1 KiB.
+      if (Number(size) < 500) {
+        page.fail(`${icon.rel} ${icon.raw} is only ${size} bytes — truncated or a placeholder`);
+      }
+    }
+
+    // Bare /favicon.ico, which link unfurlers and feed readers request without
+    // reading the HTML at all. Served from the app root, so it is unaffected by
+    // the subpath issue above and is a genuinely separate guarantee.
+    const bare = await page.evaluate(
+      `fetch('./favicon.ico').then(r => r.status + ':' + (r.headers.get('content-type') || '?'))
+       .catch(e => 'threw:' + e.message)`,
+    );
+    if (!String(bare).startsWith("200:image/")) {
+      page.fail(`an unadorned request for favicon.ico returned ${bare}`);
+    }
+
+    /**
+     * theme-color: exactly one tag, and its content tracks the REAL app bar
+     * colour rather than a literal that can drift from the palette.
+     *
+     * MEASURED ACROSS A TOGGLE, to make the result independent of the host's
+     * colour preference. Deleting the `watchEffect` in useAppTheme.js was caught
+     * on load here, but only incidentally: index.html ships the DARK surface as
+     * its static default, this headless Chrome reports no dark preference, so
+     * `initialTheme()` picked light and the mismatch was visible immediately. On
+     * a machine that prefers dark, the static default and the initial theme
+     * agree and a load-only comparison would have nothing to say. The toggle is
+     * what makes the sync load-bearing in either environment.
+     */
+    const readMeta = () =>
+      page.evaluate(`(() => {
+        const tags = [...document.querySelectorAll('meta[name="theme-color"]')];
+        const bar = document.querySelector('.v-app-bar');
+        return JSON.stringify({
+          count: tags.length,
+          media: tags.map(t => t.getAttribute('media')),
+          content: tags.map(t => t.getAttribute('content')),
+          bar: bar ? getComputedStyle(bar).backgroundColor : null,
+        });
+      })()`);
+
+    // The meta is authored as hex; computed style comes back as rgb().
+    const asRgb = (v) => {
+      const hex = (v || "").replace("#", "").toLowerCase();
+      if (!/^[0-9a-f]{6}$/.test(hex)) return null;
+      return `rgb(${parseInt(hex.slice(0, 2), 16)}, ${parseInt(hex.slice(2, 4), 16)}, ${parseInt(hex.slice(4, 6), 16)})`;
+    };
+
+    const compare = (m, when) => {
+      const rgb = asRgb(m.content[0]);
+      if (!rgb) {
+        page.fail(`${when}: theme-color content "${m.content[0]}" is not a 6-digit hex colour`);
+      } else if (m.bar && m.bar !== rgb) {
+        page.fail(`${when}: theme-color is ${m.content[0]} (${rgb}) but the app bar renders ${m.bar}`);
+      }
+    };
+
+    const before = JSON.parse(await readMeta());
+    if (before.count !== 1) {
+      page.fail(`expected exactly 1 theme-color tag, found ${before.count} — the browser uses the first that applies`);
+    }
+    if (before.media.some(Boolean)) {
+      page.fail(`theme-color carries a media attribute (${before.media}); the persisted theme choice beats the OS preference`);
+    }
+    compare(before, "on load");
+
+    const toggled = await page.evaluate(`(() => {
+      const btn = [...document.querySelectorAll('.v-app-bar button')]
+        .find(b => /theme/i.test(b.getAttribute('aria-label') || ''));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`);
+    if (!toggled) {
+      page.fail("no theme toggle button found, so the theme-color sync could not be exercised");
+      return;
+    }
+
+    await page.waitFor(
+      `getComputedStyle(document.querySelector('.v-app-bar')).backgroundColor !== ${JSON.stringify(before.bar)}`,
+      3000,
+    );
+    const after = JSON.parse(await readMeta());
+    if (after.bar === before.bar) {
+      page.fail("the app bar colour did not change, so this proves nothing about the sync");
+    }
+    compare(after, "after toggling the theme");
+  });
+  record("favicon: icons resolve under a subpath, theme-color matches the app bar", problems);
 }
 
 /**
@@ -1380,6 +1561,7 @@ try {
   await checkChat();
   await checkOrb();
   await checkIconButtons();
+  await checkFavicon();
   await checkLazySearch();
   await checkProgressBars();
   await checkRibbonRack();

@@ -21,8 +21,15 @@ import fleets from "./fleets.js";
 import jointCodes from "./jointCodes.js";
 import phonetic from "./phonetic.js";
 import awards from "./awards.js";
+import directives from "./directives.js";
 
-/** Knowledge topics, in the order they appear in nav and on the index page. */
+/**
+ * Knowledge topics, in the order they appear in nav and on the index page.
+ *
+ * Directives is last on purpose. It is the topic people arrive at from a
+ * citation chip rather than by browsing, and putting the authorities above the
+ * material they authorize would front-load the driest page on the site.
+ */
 export const TOPICS = [
   checklist,
   evalCalendar,
@@ -32,6 +39,7 @@ export const TOPICS = [
   jointCodes,
   phonetic,
   awards,
+  directives,
 ];
 
 /** Quick links is a topic for search/citation purposes but has its own view. */

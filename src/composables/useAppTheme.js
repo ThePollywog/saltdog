@@ -5,7 +5,7 @@
  * wins afterward — "I picked light, why is it dark again" is the bug that makes
  * a theme toggle feel broken.
  */
-import { computed } from "vue";
+import { computed, watchEffect } from "vue";
 import { useTheme } from "vuetify";
 import { load, save } from "../lib/persist.js";
 
@@ -26,6 +26,27 @@ export function useAppTheme() {
   const theme = useTheme();
 
   const isDark = computed(() => theme.global.current.value.dark);
+
+  /**
+   * Keep <meta name="theme-color"> on the app bar's actual colour.
+   *
+   * Read out of the resolved palette rather than written as a literal, because a
+   * literal is a second copy of a value that already lives in vuetify.js and
+   * would silently go stale the first time the palette is retuned. `surface` is
+   * the right token: <v-app-bar> is declared with no `color`, so that is what it
+   * renders as, and this meta exists purely to make the browser chrome continue
+   * the app bar rather than sit on top of a seam.
+   *
+   * index.html ships one such tag with no `media` attribute, so this updates it
+   * in place instead of appending a second one — with two present the browser
+   * takes the first that applies, which would make the toggle look broken.
+   */
+  watchEffect(() => {
+    const surface = theme.global.current.value.colors?.surface;
+    if (!surface || typeof document === "undefined") return;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", surface);
+  });
 
   function toggle() {
     const next = isDark.value ? LIGHT : DARK;

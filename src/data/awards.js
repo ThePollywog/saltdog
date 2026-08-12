@@ -441,6 +441,7 @@ export default {
   sections: [
     {
       id: "precedence",
+      refs: ["secnav-m-1650-1"],
       heading: "Order of precedence",
       kind: "awards",
       keywords: [
@@ -462,6 +463,7 @@ export default {
     },
     {
       id: "wear",
+      refs: ["secnav-m-1650-1"],
       heading: "How a rack is worn",
       kind: "steps",
       keywords: [
@@ -482,13 +484,14 @@ export default {
       rows: [
         "Ribbons are worn in order of precedence, most senior first — top row, inboard (wearer's right) to outboard.",
         "Mount three ribbons per row.",
-        "Build the rack from the bottom up. When your total isn't a multiple of three, the short row is the TOP one and it is centred over the row beneath it — so seven ribbons is 1 over 3 over 3, not 3 over 3 over 1.",
+        "Build the rack from the bottom up. When your total isn't a multiple of three, the short row is the TOP one and it is centered over the row beneath it — so seven ribbons is 1 over 3 over 3, not 3 over 3 over 1.",
         "Multiple awards of the same ribbon are shown with devices on that one ribbon, not by wearing it twice.",
         "A silver star or oak leaf cluster is worn in place of five bronze or gold ones.",
       ],
     },
     {
       id: "devices",
+      refs: ["secnav-m-1650-1"],
       heading: "Devices",
       kind: "kv",
       keywords: [

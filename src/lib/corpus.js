@@ -9,6 +9,7 @@
  * `section` object the knowledge page renders, so the two cannot drift.
  */
 import { ALL_TOPICS, topicRoute } from "../data/index.js";
+import { directiveText, directivesFor } from "../data/directives.js";
 import { tokenize } from "./retrieval.js";
 
 /**
@@ -101,12 +102,41 @@ function flatten(section) {
         .join(" \n ");
     }
 
+    case "directives":
+      return rows.map((d) => directiveText(d)).join(" \n ");
+
     case "table":
       return flattenTable(section);
 
     default:
       return typeof rows === "string" ? rows : JSON.stringify(rows);
   }
+}
+
+/**
+ * The instruction text a section is entitled to be found by.
+ *
+ * Every `refs` on the section plus every `refs` on its rows, resolved through
+ * data/directives.js and flattened. This is what makes "which instruction covers
+ * AT waivers" reach the AT checklist item AND the RESPERSMAN 1571-010 entry, from
+ * one data field.
+ *
+ * It is folded into the BODY, not into `keywords`, and that placement is the
+ * whole design. Keywords carry a 2.5x field weight, so citing an instruction from
+ * six places would make those six sections outrank the directive's own entry for
+ * its own series number — the citation would bury the thing it cites. At body
+ * weight the directives topic still wins "BUPERSINST 1610.10" (the label is in its
+ * heading, keywords and body) while the citing sections stay findable.
+ */
+function citedText(section) {
+  const rows = Array.isArray(section.rows) ? section.rows : [];
+  const ids = [...(section.refs ?? []), ...rows.flatMap((r) => r?.refs ?? [])];
+  if (!ids.length) return "";
+  // Deduped: the same authority cited by eight rows should not get eight times
+  // the term frequency of one cited by a single row.
+  return directivesFor([...new Set(ids)])
+    .map((d) => directiveText(d))
+    .join(" \n ");
 }
 
 const norm = (s) =>
@@ -136,7 +166,11 @@ export function buildCorpus() {
     for (const section of topic.sections ?? []) {
       const text = flatten(section);
       const keywords = [...(topic.keywords ?? []), ...(section.keywords ?? [])];
-      const bodyTokens = tokenize(`${text} ${keywords.join(" ")}`);
+      // `text` is what gets RENDERED-equivalent flattening; citations are indexed
+      // but deliberately not part of `normText`, which the exact-phrase bonus
+      // reads — a phrase hit on a shared citation string would fire on every
+      // section citing the same instruction.
+      const bodyTokens = tokenize(`${text} ${keywords.join(" ")} ${citedText(section)}`);
 
       records.push({
         id: `${topic.id}#${section.id}`,

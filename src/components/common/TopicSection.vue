@@ -14,7 +14,9 @@ import { computed, defineAsyncComponent } from "vue";
 import RefTable from "./RefTable.vue";
 import CacChip from "./CacChip.vue";
 import SystemLinks from "./SystemLinks.vue";
+import DirectiveRefs from "./DirectiveRefs.vue";
 import { viaLabel } from "../../data/systems.js";
+import { directiveUrl, libraryName } from "../../data/directives.js";
 import { mdiOpenInNew } from "@mdi/js";
 import { spriteStyle } from "../../lib/ribbons.js";
 import { insigniaStyle } from "../../lib/insignia.js";
@@ -166,6 +168,7 @@ const RANK_COLUMNS = [
               {{ item.note }}
             </div>
             <SystemLinks :ids="item.systems" class="mt-2" />
+            <DirectiveRefs :refs="item.refs" class="mt-2" />
           </div>
         </li>
       </ul>
@@ -330,6 +333,59 @@ const RANK_COLUMNS = [
       />
     </template>
 
+    <!--
+      DIRECTIVES: the instruction itself is the row. Series number, title, what it
+      governs, and where to read it — in that order, because the number is what
+      someone is scanning for and the title is what confirms they found the right
+      one. The revision letter is qualified in place rather than printed as part
+      of the number; see data/directives.js on why the letter is not an identity.
+    -->
+    <template v-else-if="section.kind === 'directives'">
+      <v-list class="pa-0" bg-color="transparent">
+        <v-list-item
+          v-for="d in rows"
+          :key="d.id"
+          class="px-0 py-3"
+          style="border-bottom: 1px solid rgba(var(--v-border-color), 0.4)"
+        >
+          <div class="d-flex flex-wrap align-baseline ga-2 mb-1">
+            <a
+              v-if="directiveUrl(d)"
+              :href="directiveUrl(d)"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="salt-link mono font-weight-medium"
+            >
+              {{ d.label }}
+              <v-icon :icon="mdiOpenInNew" size="12" class="ml-1" aria-hidden="true" />
+              <span class="sr-only">
+                — {{ d.title }}. Opens {{ libraryName(d) }} in a new tab.
+              </span>
+            </a>
+            <span v-else class="mono font-weight-medium">{{ d.label }}</span>
+
+            <!--
+              "(rev H as of Aug 2026)" rather than "1610.10H". Printing the letter
+              inside the number makes a transcription look like a live fact; the
+              parenthetical says how much to trust it.
+            -->
+            <span v-if="d.rev" class="text-caption" style="opacity: 0.7">
+              (rev {{ d.rev }} as transcribed)
+            </span>
+            <span v-if="d.parent" class="text-caption" style="opacity: 0.7">
+              article of {{ d.parent === 'respersman' ? 'RESPERSMAN' : d.parent }}
+            </span>
+          </div>
+
+          <div class="text-body-2 font-weight-medium">{{ d.title }}</div>
+          <div class="text-body-2 mt-1" style="opacity: 0.85">{{ d.governs }}</div>
+          <div class="salt-url mt-1" style="opacity: 0.6">
+            Find it at {{ libraryName(d) }}
+          </div>
+        </v-list-item>
+      </v-list>
+    </template>
+
     <!-- TABLE: generic, column-driven. -->
     <template v-else-if="section.kind === 'table'">
       <RefTable
@@ -345,6 +401,14 @@ const RANK_COLUMNS = [
         No renderer for section kind "{{ section.kind }}".
       </v-alert>
     </template>
+
+    <!--
+      Section-level citations sit below the content and above the note: the
+      content is the answer, this is what the answer rests on, and the note is
+      the caveat about both. Renders nothing at all when a section has no `refs`
+      — an empty "Authority:" label would imply the omission was a finding.
+    -->
+    <DirectiveRefs :refs="section.refs" class="mt-4" />
 
     <p v-if="section.note" class="text-caption mt-3 mb-0" style="opacity: 0.75">
       {{ section.note }}

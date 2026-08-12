@@ -1,6 +1,6 @@
 <script setup>
 /**
- * Tab container for the six interactive tools.
+ * Tab container for the interactive tools.
  *
  * The tab is part of the URL (`/tools/points`), not component state. That's the
  * difference between "open the points tracker" being a shareable link and being
@@ -27,6 +27,7 @@ const router = useRouter();
  */
 const COMPONENTS = {
   checklist: () => import("../components/tools/ChecklistTool.vue"),
+  due: () => import("../components/tools/DueDatesTool.vue"),
   eval: () => import("../components/tools/EvalLookupTool.vue"),
   points: () => import("../components/tools/PointsTracker.vue"),
   phonetic: () => import("../components/tools/PhoneticTool.vue"),

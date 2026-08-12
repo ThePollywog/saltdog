@@ -63,6 +63,38 @@ export const PHRASE_ALIASES = [
   [/\bribbon\s+rack\b/gi, "awards precedence ribbons order wear"],
   [/\border\s+of\s+precedence\b/gi, "awards precedence ribbons wear"],
   [/\bwhat\s+order\b/gi, "precedence order"],
+
+  /**
+   * "Which reg covers X" — the question the directives topic exists to answer.
+   *
+   * It needs a rewrite to work at all: "which", "what" and "covers" are all
+   * stopwords, so the query reduces to the bare subject ("evals") and lands on
+   * the subject-matter card instead of the authority. `reg`, `regs`, `manual`,
+   * `authority` and `source` are the words people actually use and none of them
+   * is a token alias, which is why the alternation is this wide. It fires on the
+   * raw string, before stopword removal — the only stage where the interrogative
+   * is still visible.
+   *
+   * THE EXPANSION IS TWO WORDS, AND THAT IS THE WHOLE FINDING. This started as
+   * six rules with five- to seven-term expansions, which measured WORSE than
+   * having no rule at all: "which reg covers evals" and "per what regulation do
+   * I owe AT" both returned `unknown`. The cause is the coverage factor —
+   * `0.4 + 0.6 × covered/groups` — which scores a record on the fraction of
+   * query terms it matches. Injecting seven synonyms into a four-word question
+   * means every record in the corpus now misses most of the query, so every
+   * score collapses and the best answer falls under the threshold. A long
+   * expansion in a coverage-weighted scorer doesn't broaden the net, it sinks it.
+   *
+   * Measured over 17 phrasings against four variants: this rule turns both
+   * `unknown` results into answers and costs nothing anywhere else (the full
+   * golden suite passes under all four). Adding a third term, or re-adding the
+   * `governing …` / `where does it say` / `per what` / `cite` rules, changed not
+   * one of the 17 outcomes — so they are not in here.
+   */
+  [
+    /\b(what|which|whats|what's)\s+(instruction|instructions|reg|regs|regulation|manual|directive|reference|authority|source)\b/gi,
+    "instruction directive",
+  ],
 ];
 
 /**
@@ -181,7 +213,32 @@ export const TOKEN_ALIASES = {
   paygrade: ["rank", "grade", "e", "o", "w"],
   rate: ["rating", "rank", "enlisted"],
   navadmin: ["message", "passdown", "policy"],
-  respersman: ["reserve", "personnel", "manual", "instruction"],
+
+  // Directives. Every issuing authority a reservist is likely to type, mapped
+  // toward the subjects it governs so "BUPERSINST" alone lands on the reserve
+  // and eval entries rather than on nothing. The series NUMBERS need no aliases:
+  // tokenize() already splits "1610.10H" into 1610 / 10h / 10 / h, so the digits
+  // are indexed from the labels themselves.
+  bupersinst: ["bureau", "naval", "personnel", "instruction", "directive", "authority"],
+  opnavinst: ["opnav", "chief", "naval", "operations", "instruction", "directive", "authority"],
+  secnavinst: ["secnav", "secretary", "navy", "instruction", "directive", "authority"],
+  secnav: ["secretary", "navy", "instruction", "manual", "directive"],
+  respersman: ["reserve", "personnel", "manual", "instruction", "directive", "authority"],
+  milpersman: ["military", "personnel", "manual", "instruction", "record", "article"],
+  bumedinst: ["medical", "instruction", "directive", "health"],
+  dodi: ["dod", "defense", "instruction", "directive", "joint", "authority"],
+  dodd: ["dod", "defense", "directive", "instruction", "authority"],
+  instruction: ["directive", "authority", "policy", "governs", "reference"],
+  instructions: ["directive", "authority", "policy", "governs", "reference"],
+  directive: ["instruction", "authority", "policy", "governs"],
+  regulation: ["instruction", "directive", "authority", "policy"],
+  authority: ["instruction", "directive", "governs", "reference"],
+  doni: ["directives", "issuances", "instruction", "library", "secnav"],
+  evalman: ["eval", "fitrep", "performance", "evaluation", "bupersinst", "1610"],
+  sorm: ["standard", "organization", "regulations", "opnavinst", "3120", "chain", "command"],
+  jtr: ["joint", "travel", "regulations", "per", "diem", "voucher", "dts"],
+  navpers: ["form", "personnel", "record", "page"],
+  sead: ["security", "executive", "agent", "directive", "clearance", "reporting"],
 
   // Case-ambiguous — only expand on an uppercase match in the raw query.
   at: { caseSensitive: true, terms: ["annual", "training", "adt", "orders", "nrows", "12", "days"] },
