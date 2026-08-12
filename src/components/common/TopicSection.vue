@@ -182,6 +182,26 @@ const RANK_COLUMNS = [
       <SystemLinks :ids="section.systems" size="small" label="Go there" class="mt-3" />
     </template>
 
+    <!--
+      VERBATIM: a fixed text quoted exactly — the Sailor's Creed is the case this
+      was added for.
+
+      A <blockquote> and not a <ul>, because this is prose that happens to be
+      line-broken, not a list of independent items: a screen reader announcing
+      "list, five items" over the creed is wrong about what it is. One <p> per
+      line rather than one <p> with <br>s, so each sentence is its own navigable
+      block and the line breaks survive a copy-paste into a Word document, which
+      is exactly what someone building a quarters brief will do with this.
+
+      No `white-space: pre-wrap` and no leading indentation in the data: the rows
+      are plain sentences, so nothing here depends on the source file's wrapping.
+    -->
+    <template v-else-if="section.kind === 'verbatim'">
+      <blockquote class="salt-verbatim">
+        <p v-for="(line, i) in rows" :key="i" class="text-body-1 mb-2">{{ line }}</p>
+      </blockquote>
+    </template>
+
     <!-- KV: term/definition pairs. <dl> is the correct semantics here. -->
     <template v-else-if="section.kind === 'kv'">
       <dl class="salt-dl">
@@ -426,6 +446,19 @@ const RANK_COLUMNS = [
   display: inline-block;
   border: 1px solid rgba(var(--v-border-color), 0.55);
   image-rendering: -webkit-optimize-contrast;
+}
+/* A quoted fixed text. The accent rule on the inline-start edge is the only
+   decoration — a gold-tinted body text would fail contrast in the light theme
+   (see plugins/vuetify.js), so the colour goes on the border and the words stay
+   at full contrast. `border-inline-start` rather than `border-left` so it flips
+   with the writing direction along with the padding. */
+.salt-verbatim {
+  border-inline-start: 3px solid rgb(var(--v-theme-primary));
+  padding-inline-start: 16px;
+  margin: 0;
+}
+.salt-verbatim p:last-child {
+  margin-bottom: 0 !important;
 }
 /* `.salt-insignia` is in styles/app.css — the rank explorer renders it too. */
 .salt-cards {

@@ -168,7 +168,7 @@ export const DIRECTIVES = [
     rev: "F",
     title: "Navy Enlisted Retention and Career Development Program",
     governs:
-      "Career Development Boards, Career Waypoints counselling, and what your Career Counselor is required to do for you and when.",
+      "Career Development Boards, Career Waypoints counseling, and what your Career Counselor is required to do for you and when.",
     library: "doni",
     group: "advancement",
     keywords: ["career", "counselor", "cdb", "development", "board", "retention", "cway"],
@@ -184,6 +184,35 @@ export const DIRECTIVES = [
     library: "doni",
     group: "awards",
     keywords: ["awards", "precedence", "ribbon", "medal", "device", "star", "wear", "rack"],
+  },
+  {
+    /**
+     * The "I" is a revision letter, so it lives in `rev` and not in the label —
+     * the same rule as BUPERSINST 1610.10. Worth spelling out here because
+     * "NAVPERS 15665I" is how everyone writes it and the label reads incomplete
+     * without it; the display helper puts it back.
+     */
+    id: "navpers-15665",
+    label: "NAVPERS 15665",
+    rev: "I",
+    title: "United States Navy Uniform Regulations",
+    governs:
+      "How the uniform is worn — components and occasions, grooming standards, and the placement of ribbons, insignia and warfare devices.",
+    library: "mynavyhr",
+    group: "awards",
+    keywords: ["uniform", "regulations", "navpers", "15665", "grooming", "insignia", "placement", "wear"],
+  },
+
+  // --- Navy Regulations, customs & courtesies -------------------------------
+  {
+    id: "navy-regs",
+    label: "U.S. Navy Regulations",
+    title: "United States Navy Regulations, 1990",
+    governs:
+      "The Navy's foundational regulation — the authority of a commanding officer, the general duties of officers and enlisted, and the honors, ceremonies and customs the service observes.",
+    library: "doni",
+    group: "customs",
+    keywords: ["navy regulations", "regulations", "customs", "courtesies", "honors", "ceremonies", "authority", "command"],
   },
 
   // --- Physical readiness ---------------------------------------------------
@@ -350,6 +379,11 @@ const GROUPS = [
     id: "security",
     heading: "Security & cybersecurity",
     keywords: ["security", "clearance", "cyber", "saar", "diss"],
+  },
+  {
+    id: "customs",
+    heading: "Navy Regulations, customs & courtesies",
+    keywords: ["navy regulations", "customs", "courtesies", "honors", "saluting", "colors", "watch"],
   },
 ];
 

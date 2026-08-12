@@ -37,7 +37,11 @@ function flatten(section) {
     case "checklist":
       return rows.map((i) => `${i.label} ${i.note ?? ""}`).join(" \n ");
 
+    // Both are an array of plain strings. Shared arm rather than two identical
+    // ones, and NOT left to the `default` — that stringifies, which would put
+    // JSON's quotes and commas into the indexed text.
     case "steps":
+    case "verbatim":
       return rows.join(" \n ");
 
     case "kv":

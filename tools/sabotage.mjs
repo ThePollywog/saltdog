@@ -430,6 +430,150 @@ const MUTATIONS = [
     ],
     breaks: "BUPERSINST 1610.10",
   },
+
+  // --- doctrine, customs and courtesies -----------------------------------
+  {
+    /**
+     * The defect the renderer/flattener check exists for. Deleting the branch
+     * does not throw and does not fail a build — the template falls through to
+     * the unknown-kind alert, so the Sailor's Creed is replaced by a yellow
+     * "no renderer" box on the page and in every chat answer that cites it.
+     */
+    file: "src/components/common/TopicSection.vue",
+    find: `    <template v-else-if="section.kind === 'verbatim'">`,
+    repl: `    <template v-else-if="section.kind === 'verbatim-disabled'">`,
+    breaks: "renderer and a flattener",
+  },
+  {
+    // The other half, and the quieter one: the flatten() arm. Removed, the creed
+    // still indexes — via JSON.stringify, quotes and commas included. Nothing
+    // visibly breaks, which is why the check covers both files.
+    file: "src/lib/corpus.js",
+    find: `    case "steps":
+    case "verbatim":`,
+    repl: `    case "steps":`,
+    breaks: "renderer and a flattener",
+  },
+  {
+    // Ten general orders under a heading that says eleven.
+    file: "src/data/doctrine.js",
+    find: `  "To talk to no one except in the line of duty.",
+`,
+    repl: ``,
+    breaks: "eleven General Orders",
+  },
+  {
+    // A paraphrase that reads fine and is not the order. The `To ` check is what
+    // notices; nothing else in the suite reads these strings.
+    file: "src/data/doctrine.js",
+    find: `  "To quit my post only when properly relieved.",`,
+    repl: `  "Never leave your post until you are properly relieved.",`,
+    breaks: "eleven General Orders",
+  },
+  {
+    // Rename a core value and the creed one heading above now contradicts it.
+    file: "src/data/doctrine.js",
+    find: `    k: "Commitment",`,
+    repl: `    k: "Dedication",`,
+    breaks: "same three values",
+  },
+  {
+    // Two sentences joined into one row. Renders as a paragraph rather than as
+    // the creed, and no other check looks at the row split.
+    file: "src/data/doctrine.js",
+    find: `  "I proudly serve my country's Navy combat team with Honor, Courage and Commitment.",
+  "I am committed to excellence and the fair treatment of all.",`,
+    repl: `  "I proudly serve my country's Navy combat team with Honor, Courage and Commitment. I am committed to excellence and the fair treatment of all.",`,
+    breaks: "quoted as lines",
+  },
+  {
+    /**
+     * One digit in the watch table — the exact error the arithmetic check was
+     * written for. It leaves a plausible-looking table with a one-hour hole
+     * between the morning and forenoon watches.
+     */
+    file: "src/data/doctrine.js",
+    find: `  { watch: "Morning watch", time: "0400 – 0800" },`,
+    repl: `  { watch: "Morning watch", time: "0400 – 0700" },`,
+    breaks: "24 hours with no gap",
+  },
+  {
+    // The dog watches lengthened to four hours each, which keeps the chain
+    // intact and the total at 24 — the gap arithmetic alone would pass. It is
+    // the two-hour assertion at the end that catches it, and it matters because
+    // the bells section explains the rotation in terms of the short watches.
+    file: "src/data/doctrine.js",
+    find: `  { watch: "First dog watch", time: "1600 – 1800" },
+  { watch: "Second dog watch", time: "1800 – 2000" },`,
+    repl: `  { watch: "First dog watch", time: "1200 – 1600" },
+  { watch: "Second dog watch", time: "1600 – 2000" },`,
+    breaks: "24 hours with no gap",
+  },
+  {
+    // Drop the provenance off the creed. It renders as a quotation with nothing
+    // under it — text presented as authoritative with no stated source, which is
+    // the one omission this page cannot afford.
+    file: "src/data/doctrine.js",
+    find: `      note:
+        "Adopted in 1993 and revised in 1994. The creed is promulgated by the CNO " +
+        "and carried in training material rather than in a numbered instruction, so " +
+        "none of the directives indexed on this site is its source.",
+`,
+    repl: ``,
+    breaks: "cites public authorities",
+  },
+  {
+    // The other shape of the same defect, and the one that actually shipped in
+    // the first draft: a chip naming a document that does not contain the text.
+    // Nothing structural is wrong — `navy-regs` is a real registered directive —
+    // so only the rule that the creed's source be stated where it is true
+    // catches it. This is why that rule accepts a note and not just `refs`.
+    file: "src/data/doctrine.js",
+    find: `      refs: ["opnavinst-3120-32"],
+      rows: GENERAL_ORDERS,`,
+    repl: `      rows: GENERAL_ORDERS,`,
+    breaks: "cites public authorities",
+  },
+  {
+    // The book named as a source inside the content, which is the thing this
+    // topic was built to avoid.
+    file: "src/data/doctrine.js",
+    find: `      heading: "Shipboard terminology",`,
+    repl: `      heading: "Shipboard terminology (Bluejacket's Manual ch. 3)",`,
+    breaks: "cites public authorities",
+  },
+  {
+    // The note trimmed to something that no longer distinguishes the quoted
+    // texts from the summaries — the honesty the page rests on, and the easiest
+    // thing here to lose during an unrelated edit.
+    file: "src/data/doctrine.js",
+    find: `  "The Sailor's Creed and the General Orders are quoted exactly; everything else " +
+  "on this page is summarized in plain words. Customs, watch bills and ceremony " +`,
+    repl: `  "Customs, watch bills and ceremony " +`,
+    breaks: "which parts are quoted",
+  },
+  {
+    /**
+     * Put a section-naming word back into the TOPIC keywords, which is the state
+     * this page shipped in first. corpus.js folds topic keywords into every
+     * section, so "salute" up here ties all eight sections and "when do I not
+     * salute" answers with the Sailor's Creed. Nothing else in the suite moves.
+     */
+    file: "src/data/doctrine.js",
+    find: `  keywords: ["doctrine", "customs", "courtesies", "bluejacket", "navy regulations"],`,
+    repl: `  keywords: ["doctrine", "customs", "courtesies", "bluejacket", "navy regulations", "salute", "saluting"],`,
+    breaks: "when do I not salute",
+  },
+  {
+    // The headword list on the terminology section. Without it a one-word
+    // question about a defined term scores on body weight alone and falls under
+    // the answer threshold.
+    file: "src/data/doctrine.js",
+    find: `        "ladder",
+`,
+    repl: ``,
+    breaks: "ladder on a ship",
+  },
 ];
 
 // --- harness ---------------------------------------------------------------

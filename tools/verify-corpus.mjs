@@ -68,6 +68,12 @@ import {
   display,
   libraryName,
 } from "../src/data/directives.js";
+import doctrine, {
+  CORE_VALUES,
+  GENERAL_ORDERS,
+  SAILORS_CREED,
+  WATCHES,
+} from "../src/data/doctrine.js";
 import {
   ICS_FILENAME,
   addMonths,
@@ -202,6 +208,46 @@ const GOLDEN = [
   ["how do I check my clearance", "reservist-checklist#howto-diss"],
   ["how many points is a drill weekend", "reservist-checklist#drill"],
 
+  // --- doctrine, customs and courtesies -----------------------------------
+  // One row per section, for the same reason the directive groups get one each:
+  // this page is eight independent chunks of memorized material, and a section
+  // that stops being reachable is invisible until somebody asks about that one.
+  //
+  // Three of these are pinned because they measure a specific decision:
+  //
+  //   "when do I not salute" — was answering with the SAILOR'S CREED. Every word
+  //   in it except "salute" is a stopword, and `salute` was listed in the TOPIC
+  //   keywords, which corpus.js folds into every section — so all eight sections
+  //   tied at 0.875 and array order picked the winner. Fixed by cutting the topic
+  //   keywords back to words that name the whole page. Put "salute" back up there
+  //   and this row fails while every other doctrine row still passes, which is
+  //   exactly the localization you want from it.
+  //
+  //   "what is a ladder on a ship" — returned `unknown` at 0.250 on body weight
+  //   alone. Fixed by listing the terms the section defines as its keywords, so
+  //   this row is what proves that list is doing work.
+  //
+  //   "how do I report aboard a ship" — returned `unknown` at 0.272, one covered
+  //   word short. The tokenizer strips plurals but does not stem, so the section's
+  //   "reporting aboard" never matched a typed "report".
+  ["what is the Sailor's Creed", "doctrine#creed"],
+  ["recite the sailors creed", "doctrine#creed"],
+  ["what are the navy core values", "doctrine#core-values"],
+  ["honor courage commitment", ["doctrine#core-values", "doctrine#creed"]],
+  ["what are the 11 general orders", "doctrine#general-orders"],
+  ["what are the general orders of the sentry", "doctrine#general-orders"],
+  ["do I salute indoors", "doctrine#saluting"],
+  ["when do I not salute", "doctrine#saluting"],
+  ["how do I report aboard a ship", "doctrine#saluting"],
+  ["when is morning colors", "doctrine#colors"],
+  ["what does half mast mean", "doctrine#colors"],
+  ["what time is the mid watch", "doctrine#watches"],
+  ["why are there dog watches", ["doctrine#watches", "doctrine#bells"]],
+  ["what is eight bells", "doctrine#bells"],
+  ["what is a scuttlebutt", "doctrine#terminology"],
+  ["what does geedunk mean", "doctrine#terminology"],
+  ["what is a ladder on a ship", "doctrine#terminology"],
+
   // --- instructions and directives ----------------------------------------
   // Two question shapes, because they exercise different halves of the
   // retriever. A series number ("BUPERSINST 1610.10") tests the TOKENIZER —
@@ -240,6 +286,9 @@ const GOLDEN = [
   // only measured case where deleting that rule changes an answer. Pinned for
   // exactly that reason: it is what makes the rule's presence observable.
   ["which reg covers evals", "directives#performance"],
+  ["which instruction covers customs and courtesies", "directives#customs"],
+  ["US Navy Regulations", "directives#customs"],
+  ["uniform regulations", ["directives#awards", "awards#wear"]],
 ];
 
 /** Questions the scorer must ADMIT IT CANNOT ANSWER. */
@@ -387,6 +436,54 @@ describe("data integrity", () => {
     }
   });
 
+  it("every section kind a topic uses has a renderer and a flattener", () => {
+    /**
+     * Two half-silent failure modes, one test.
+     *
+     * TopicSection.vue ends in a warning alert for an unknown kind, so a missing
+     * branch does surface — but only to whoever happens to load that page, and it
+     * looks like a data error rather than a missing component. corpus.js is worse:
+     * its `default` arm JSON.stringifies the rows, so an unflattened kind is still
+     * searchable, just with quotes and commas in the index and no per-kind
+     * structure. Nothing anywhere fails. This is how the `verbatim` kind was
+     * checked in — both files, not just the template.
+     *
+     * Read out of the source text rather than by rendering, because mounting
+     * Vuetify components in Node is the dependency this suite exists without.
+     */
+    const view = readFileSync(join(ROOT, "src/components/common/TopicSection.vue"), "utf8");
+    const flat = readFileSync(join(ROOT, "src/lib/corpus.js"), "utf8");
+
+    // Single quotes in the template, because the comparison sits inside a
+    // double-quoted `v-else-if` attribute. Both forms are accepted so a later
+    // edit that normalizes the quoting does not silently empty this set — which
+    // is what the `kv` sanity assertion below caught on the first run.
+    const rendered = new Set(
+      [...view.matchAll(/section\.kind === ['"]([a-z-]+)['"]/g)].map((m) => m[1]),
+    );
+    const flattened = new Set([...flat.matchAll(/case "([a-z-]+)":/g)].map((m) => m[1]));
+
+    // Sanity on the extraction itself: a regex that silently matches nothing
+    // would make this test pass for every kind. `kv` is in both files and has
+    // been since the first knowledge topic shipped.
+    assert.ok(rendered.has("kv"), "the renderer scan found nothing — the pattern has rotted");
+    assert.ok(flattened.has("kv"), "the flattener scan found nothing — the pattern has rotted");
+
+    for (const topic of ALL_TOPICS) {
+      for (const s of topic.sections) {
+        assert.ok(
+          rendered.has(s.kind),
+          `section "${topic.id}#${s.id}" has kind "${s.kind}" with no branch in TopicSection.vue`,
+        );
+        assert.ok(
+          flattened.has(s.kind),
+          `section "${topic.id}#${s.id}" has kind "${s.kind}" with no case in corpus.js flatten() — ` +
+            `it would fall through to JSON.stringify and index punctuation`,
+        );
+      }
+    }
+  });
+
   it("topic ids in the registry map back to themselves", () => {
     for (const topic of ALL_TOPICS) {
       assert.equal(TOPIC_BY_ID.get(topic.id), topic, `registry lookup broken for "${topic.id}"`);
@@ -454,6 +551,13 @@ describe("data integrity", () => {
       "enrolment", "fulfil", "practise", "catalogue", "judgement",
       "behaviour", "colour", "honour", "favour", "labour", "neighbour",
       "armour", "valour",
+      // Doubled-L forms. Added after the first version of this list shipped and
+      // "Career Waypoints counselling" slipped past it in a directive's `governs`
+      // text, two lines from the word "Counselor" spelled the US way. Only
+      // unambiguous ones: "cancelled" and "totalled" are both accepted in US
+      // usage and are deliberately absent.
+      "counselling", "travelling", "modelling", "labelled", "signalling",
+      "marvellous", "skilful", "wilful", "instalment",
     ];
     for (const topic of ALL_TOPICS) {
       for (const [path, str] of strings(topic, topic.id)) {
@@ -1000,6 +1104,214 @@ describe("directive registry", () => {
       assert.ok(DIRECTIVE_BY_ID.has(id), `the registry has lost "${id}"`);
     }
     assert.ok(DIRECTIVES.length >= 15, `only ${DIRECTIVES.length} directives registered`);
+  });
+});
+
+describe("doctrine, customs and courtesies", () => {
+  /**
+   * THE HONEST LIMIT ON THIS WHOLE BLOCK, up front: none of it can verify that the
+   * Sailor's Creed or the General Orders are quoted CORRECTLY. There is no local
+   * copy of either to diff against — they were written from memory, which is
+   * exactly why the topic's `note` says the page is orientation and points at the
+   * authorities. A test that compared the data to itself and reported "verbatim
+   * text verified" would be worse than no test, because it would retire the doubt
+   * without earning it.
+   *
+   * What these DO catch is the internal contradiction: a heading that promises a
+   * count the rows don't deliver, a creed that names values the values section
+   * doesn't list, a watch table with a hole in it. Those are the defects that
+   * would be introduced by a later edit to one place and not the other, and they
+   * are the ones that make a reference look unreliable even when every individual
+   * sentence is right.
+   */
+  const sectionOf = (id) => doctrine.sections.find((s) => s.id === id);
+
+  it("the eleven General Orders are eleven, and the heading says so", () => {
+    // Both directions, because the heading and the array are edited separately:
+    // the number word in the heading has to match the row count, and the count
+    // has to be 11. Dropping an order while fixing the heading to "ten" would
+    // satisfy the first check alone.
+    assert.equal(GENERAL_ORDERS.length, 11, "there are eleven General Orders of the Sentry");
+    const heading = sectionOf("general-orders").heading;
+    assert.match(heading, /\beleven\b/i, `heading "${heading}" no longer states the count`);
+
+    for (const [i, order] of GENERAL_ORDERS.entries()) {
+      // Each is a duty, phrased as an infinitive, and ends in a period. The
+      // `steps` renderer numbers them, so an order that arrived as a fragment
+      // would still display as "7." with something ungrammatical after it.
+      assert.match(order, /^To /, `general order ${i + 1} does not begin "To ": ${order}`);
+      assert.match(order, /\.$/, `general order ${i + 1} is not a full sentence: ${order}`);
+    }
+  });
+
+  it("the creed and the core values name the same three values", () => {
+    /**
+     * The creed's fourth line lists Honor, Courage and Commitment, and the next
+     * section defines them. Two copies of one fact, in two exports, and nothing
+     * makes them agree — so this derives the values out of the creed's own text
+     * and requires the keys to match. Retitle "Commitment" without touching the
+     * creed and the page contradicts itself one heading apart.
+     */
+    const keys = CORE_VALUES.map((v) => v.k);
+    assert.deepEqual(keys, ["Honor", "Courage", "Commitment"]);
+
+    const creed = SAILORS_CREED.join(" ");
+    for (const k of keys) {
+      assert.ok(creed.includes(k), `the creed no longer names "${k}"`);
+    }
+    // And nothing extra: a fourth core value would have to appear in the creed
+    // too, or one of the two is wrong.
+    assert.equal(CORE_VALUES.length, 3, "the Navy has three core values");
+    for (const v of CORE_VALUES) {
+      assert.ok(v.v?.length > 40, `"${v.k}" has no real description`);
+    }
+  });
+
+  it("the creed is quoted as lines, not reflowed into a paragraph", () => {
+    // The `verbatim` renderer emits one <p> per row, so the row split IS the line
+    // break a reader sees. Five sentences, one per row, each ending in a period —
+    // a row holding two sentences means someone joined lines and the creed will
+    // render as prose.
+    assert.equal(SAILORS_CREED.length, 5, "the creed is five lines");
+    assert.match(SAILORS_CREED[0], /^I am a United States Sailor\.$/);
+    for (const line of SAILORS_CREED) {
+      assert.match(line, /\.$/, `creed line does not end a sentence: ${line}`);
+      assert.equal(
+        (line.match(/\. /g) ?? []).length,
+        0,
+        `two sentences share one creed line, which will render as one paragraph: ${line}`,
+      );
+    }
+    assert.equal(sectionOf("creed").kind, "verbatim");
+  });
+
+  it("the watch rotation covers all 24 hours with no gap and no overlap", () => {
+    /**
+     * A derived check, and the only test in this block with real arithmetic in it.
+     * A single mistyped digit in the table — "0400 – 0900" — is invisible to
+     * inspection and to every other check here, and it is the kind of error a
+     * reader would trust. So the times are parsed and chained: each watch has to
+     * start where the previous one ended, the sequence has to close the loop, and
+     * the durations have to sum to a day.
+     *
+     * The list starts at the first watch (2000) and wraps through midnight, which
+     * is why "2400" and "0000" both appear and why the chain is checked modulo a
+     * day rather than as a sorted range.
+     */
+    const mins = (t) => {
+      const m = /^(\d{2})(\d{2})$/.exec(t);
+      assert.ok(m, `unparseable watch time "${t}"`);
+      return Number(m[1]) * 60 + Number(m[2]);
+    };
+
+    let total = 0;
+    for (const [i, w] of WATCHES.entries()) {
+      const parts = w.time.split("–").map((s) => s.trim());
+      assert.equal(parts.length, 2, `watch "${w.watch}" has no start–end range: ${w.time}`);
+      const [start, end] = parts.map(mins);
+
+      // Duration, wrapped: the mid watch runs 0000–0400 and the first watch
+      // 2000–2400, so an end at or before the start means it crossed midnight.
+      const span = end > start ? end - start : end + 1440 - start;
+      assert.ok(span > 0 && span <= 240, `"${w.watch}" spans ${span} minutes: ${w.time}`);
+      total += span;
+
+      const next = WATCHES[(i + 1) % WATCHES.length];
+      const nextStart = mins(next.time.split("–")[0].trim());
+      assert.equal(
+        end % 1440,
+        nextStart % 1440,
+        `"${w.watch}" ends at ${w.time.split("–")[1].trim()} but "${next.watch}" starts at ` +
+          `${next.time.split("–")[0].trim()} — the rotation has a gap`,
+      );
+    }
+    assert.equal(total, 1440, `the watches sum to ${total} minutes, not a 24-hour day`);
+
+    // Two dog watches, and they are the short ones — that is the whole reason the
+    // rotation shifts, and the bells section explains it in prose. If the dog
+    // watches became four hours long, that explanation would be wrong.
+    const dogs = WATCHES.filter((w) => /dog/i.test(w.watch));
+    assert.equal(dogs.length, 2, "there are two dog watches");
+    for (const d of dogs) {
+      const [s, e] = d.time.split("–").map((x) => mins(x.trim()));
+      assert.equal(e - s, 120, `"${d.watch}" is not a two-hour watch`);
+    }
+  });
+
+  it("cites public authorities and never the copyrighted manual as a source", () => {
+    /**
+     * The reason this topic exists in the shape it does. The obvious way to build
+     * it is to transcribe the Bluejacket's Manual, which is Naval Institute Press
+     * material rather than a public-domain government work — so every section's
+     * authority has to resolve to something in the directive registry, and the
+     * book must not be presented as one.
+     *
+     * "bluejacket" IS allowed to appear in the topic keywords, because people
+     * search for the book by name and this page is the right answer to that
+     * search. What is not allowed is the word turning up in a `refs`, a heading,
+     * or a source citation.
+     */
+    const cited = doctrine.sections.flatMap((s) => s.refs ?? []);
+    assert.ok(cited.length > 0, "no section cites an authority");
+    for (const id of new Set(cited)) {
+      assert.ok(DIRECTIVE_BY_ID.has(id), `doctrine cites unknown directive "${id}"`);
+    }
+    for (const id of ["navy-regs", "navpers-15665", "opnavinst-3120-32"]) {
+      assert.ok(cited.includes(id), `nothing on the doctrine page cites "${id}"`);
+    }
+
+    /**
+     * And the two QUOTED sections each state a provenance of their own.
+     *
+     * The page-level assertion above is not enough, and a mutation proved it:
+     * stripping the source off the Sailor's Creed SURVIVED, because another
+     * section cited the same document and the page total still looked right. A
+     * verbatim quotation with nothing under it is the one omission here that
+     * cannot be shrugged off — it is text presented as authoritative with no
+     * stated source.
+     *
+     * `refs` OR a `note`, because for the creed the honest answer is a note. It is
+     * not in any of the eighteen registered directives; it was CNO-promulgated and
+     * lives in training material. The first draft cited Navy Regulations for it
+     * and that was simply false. So the rule this encodes is "say where it came
+     * from", not "produce a chip" — a check that demanded `refs` would have been
+     * satisfied by exactly the wrong citation it was meant to prevent.
+     *
+     * Terminology is deliberately excluded from all of this: shipboard slang has
+     * no governing instruction, and inventing one to satisfy a test would be worse
+     * than the blank.
+     */
+    for (const id of ["creed", "general-orders"]) {
+      const s = sectionOf(id);
+      assert.ok(
+        (s.refs ?? []).length > 0 || (s.note ?? "").length > 40,
+        `"${id}" quotes a fixed text and says nothing about where it came from`,
+      );
+    }
+
+    assert.equal(doctrine.sourcePdf, undefined, "the doctrine topic must not claim a source PDF");
+    for (const s of doctrine.sections) {
+      assert.match(
+        JSON.stringify(s).toLowerCase(),
+        /^(?!.*bluejacket).*$/s,
+        `section "${s.id}" names the Bluejacket's Manual in its content`,
+      );
+    }
+    assert.ok(
+      doctrine.keywords.includes("bluejacket"),
+      "the page should still be findable by the name people search for",
+    );
+  });
+
+  it("says out loud which parts are quoted and which are summarized", () => {
+    // The note is the honesty this page rests on: two sections are quotations and
+    // six are plain-language summaries of conventions that vary by command. A note
+    // trimmed during an unrelated edit would leave the summaries looking like
+    // policy.
+    const note = doctrine.note ?? "";
+    assert.match(note, /quoted/i, "the note no longer distinguishes the quoted texts");
+    assert.match(note, /summariz/i, "the note no longer says the rest is summarized");
+    assert.match(note, /command/i, "the note no longer points at the local command");
   });
 });
 

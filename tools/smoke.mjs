@@ -37,6 +37,11 @@ const ROUTES = [
   ["#/knowledge/joint-codes", "Joint"],
   ["#/knowledge/phonetic-alphabet", "Phonetic"],
   ["#/knowledge/awards", "Precedence"],
+  // A line of the creed, not the topic title: this is the one page whose content
+  // is a `verbatim` block, and the whole risk with a new section kind is that the
+  // heading renders while the rows do not. Matching on the title would pass
+  // against the unknown-kind warning alert.
+  ["#/knowledge/doctrine", "I am a United States Sailor."],
   ["#/knowledge/directives", "BUPERSINST"],
   // Reachable even though /quick-links is the front door for it: the assistant
   // cites `quicklinks#personnel`, and its "Open in Knowledge" deep-link goes

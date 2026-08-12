@@ -21,6 +21,7 @@ import fleets from "./fleets.js";
 import jointCodes from "./jointCodes.js";
 import phonetic from "./phonetic.js";
 import awards from "./awards.js";
+import doctrine from "./doctrine.js";
 import directives from "./directives.js";
 
 /**
@@ -29,11 +30,17 @@ import directives from "./directives.js";
  * Directives is last on purpose. It is the topic people arrive at from a
  * citation chip rather than by browsing, and putting the authorities above the
  * material they authorize would front-load the driest page on the site.
+ *
+ * Doctrine sits next to ranks, because the two answer the same kind of question —
+ * things you are expected to have memorized rather than things you look up — and
+ * keeping them together leaves the three organizational topics (COCOMs, fleets,
+ * J-codes) as one unbroken run.
  */
 export const TOPICS = [
   checklist,
   evalCalendar,
   ranks,
+  doctrine,
   cocoms,
   fleets,
   jointCodes,

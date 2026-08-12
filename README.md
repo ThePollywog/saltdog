@@ -14,9 +14,9 @@ NOSC, or MNCC (1-833-330-MNCC).
 | --- | --- |
 | **Quick Links** (`#/quick-links`) | 30 systems across 6 categories — pay, records, readiness, training, benefits, support — each marked CAC-required or open, with a filter |
 | **Every checklist item links its application** | 30 of 33 items and all 11 procedures name the system that completes them, as a button. The three that don't are conversations, not websites |
-| **Knowledge** (`#/knowledge`) | 8 topics / 41 reference sections: annual checklist, EVAL–FITREP calendar, ranks for all six services, awards precedence, combatant commands, Navy fleets, joint staff codes, phonetic alphabet. Ranks show the real insignia; the COCOM and fleet pages carry a projected world map |
-| **Tools** (`#/tools`) | Readiness checklist, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, ribbon rack calculator, six-service rank explorer |
-| **Reference assistant** | Offline keyword search over all 47 cards (the 41 knowledge sections plus the 6 quick-links categories), with a WebGL orb. Not an AI, no network calls |
+| **Knowledge** (`#/knowledge`) | 10 topics / 59 reference sections: annual checklist, EVAL–FITREP calendar, ranks for all six services, doctrine and customs, awards precedence, combatant commands, Navy fleets, joint staff codes, phonetic alphabet, and the instructions behind all of it. Ranks show the real insignia; the COCOM and fleet pages carry a projected world map |
+| **Tools** (`#/tools`) | Readiness checklist, due-date planner with `.ics` export, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, ribbon rack calculator, six-service rank explorer |
+| **Reference assistant** | Offline keyword search over all 68 cards (the 59 knowledge sections plus the 9 quick-links categories), with a WebGL orb. Not an AI, no network calls |
 | **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
 
@@ -281,6 +281,16 @@ earn them — the AOR table has the coverage, the HQ and the fleet in fields —
 the reasoning is recorded in `cocoms.js` where the next person adding a section
 will read it. `node tools/probe.mjs` prints the ties; nothing else would.
 
+It then happened a second time, on a page written after that paragraph existed.
+The doctrine topic listed "salute", "colors", "watch" and "creed" as topic
+keywords *as well as* on the sections that own them, which tied all eight
+sections at 0.875 and answered "when do I not salute" with the Sailor's Creed.
+Worth recording as a recurrence rather than a repeat of the same note: knowing
+the rule was not enough, because the duplication looks like thoroughness while
+you are typing it. What catches it is a golden question phrased so that every
+word but one is a stopword — that is the shape that has nothing left to break a
+tie with.
+
 Relatedly, a map section's aria-label is deliberately **not** indexed. It has to
 describe every region in prose for a screen reader, which is the same prose the
 AOR table competes with, so indexing it made the map outrank the real answer. An
@@ -480,6 +490,24 @@ before any topic declared `systems`, rendering nothing on all eight topics.
   are worn in and the devices that go on them — **not** SECNAVINST 1650.1, and it
   encodes no eligibility criteria. The rack calculator arranges what you tell it
   you have; it does not decide what you have earned.
+- **The doctrine page has no local source, and it says so on the page.** The
+  obvious source for the creed, the general orders and the customs material is
+  *The Bluejacket's Manual*, which is copyrighted Naval Institute Press material
+  rather than a public-domain government work — transcribing it would be
+  infringement, and a reference whose provenance can't be cited is worth nothing
+  here. So the page cites U.S. Navy Regulations, the SORM and NAVPERS 15665
+  instead, the two quoted texts are marked as quotations and everything else is
+  summarized in plain words, and the topic note tells the reader to follow their
+  command's own instruction. The quoted texts were written from memory with
+  nothing local to check them against; the tests verify the page's internal
+  consistency (eleven general orders under a heading that says eleven, a watch
+  table with no gap, the creed and the core values naming the same three values)
+  and explicitly do **not** claim to have verified the wording.
+- The Sailor's Creed and the three core values carry **no** authority chip, which
+  is deliberate. The first draft cited Navy Regulations for both and neither text
+  is in it — they're CNO-promulgated and carried in training material. A chip
+  naming a document that doesn't contain the text is worse than no chip, since
+  the only reason to print an authority is so a reader can go and check it.
 - Rank tier gaps are stated as sentences, not left as empty tables: the Air Force
   and Space Force have no warrant officers, and the Coast Guard runs W-2 through
   W-4 only.
