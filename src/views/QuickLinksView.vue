@@ -8,7 +8,13 @@
  * readiness").
  */
 import { computed, ref } from "vue";
-import { mdiCardAccountDetailsOutline, mdiClose, mdiMagnify, mdiOpenInNew } from "@mdi/js";
+import {
+  mdiCardAccountDetailsOutline,
+  mdiClose,
+  mdiKeyboardOutline,
+  mdiMagnify,
+  mdiOpenInNew,
+} from "@mdi/js";
 import CacChip from "../components/common/CacChip.vue";
 import { viaLabel } from "../data/systems.js";
 import PdfButton from "../components/common/PdfButton.vue";
@@ -61,12 +67,26 @@ function clear() {
         {{ total }} systems a drilling reservist actually uses, grouped by what
         you're trying to get done. Most require a CAC.
       </p>
-      <PdfButton
-        v-if="quicklinks.sourcePdf"
-        :file="quicklinks.sourcePdf"
-        describes="the quick links reference"
-        label="Original PDF"
-      />
+      <div class="d-flex flex-wrap align-center ga-2">
+        <PdfButton
+          v-if="quicklinks.sourcePdf"
+          :file="quicklinks.sourcePdf"
+          describes="the quick links reference"
+          label="Original PDF"
+        />
+        <!-- Advertised here rather than in the drawer, which is already at
+             capacity. This is the page someone opens to click through to a
+             system, so it is exactly where "you could have skipped this page"
+             belongs. -->
+        <v-btn
+          :to="{ name: 'go' }"
+          variant="text"
+          size="small"
+          :prepend-icon="mdiKeyboardOutline"
+        >
+          Address-bar shortcuts
+        </v-btn>
+      </div>
     </header>
 
     <v-card class="pa-4 mb-6 salt-no-print">

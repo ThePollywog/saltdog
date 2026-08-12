@@ -2,8 +2,51 @@ import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import vuetify from "vite-plugin-vuetify";
+import { extractResolver, renderGoPage } from "./tools/go-page.mjs";
+import { bangTable } from "./src/lib/bangs.js";
 
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+
+/**
+ * Emit `go/index.html`, the static bang redirector.
+ *
+ * A generated file rather than one committed under public/, because it carries a
+ * copy of the bang table and of the resolver. Committed, both copies would drift
+ * from data/systems.js the moment a URL changed — and a stale redirect is worse
+ * than a missing one, since it looks like it worked. Generating it means the
+ * registry is still the only place an address is written down.
+ *
+ * Both hooks call the same renderer: `generateBundle` for the build, and a dev
+ * middleware so `npm run dev` serves identical bytes at /go/. Diverging dev and
+ * prod behaviour in a redirector would mean testing something nobody ships.
+ */
+function goRedirector() {
+  const build = () => {
+    const source = readFileSync(new URL("./src/lib/bangs.js", import.meta.url), "utf8");
+    return renderGoPage(bangTable(), extractResolver(source));
+  };
+
+  return {
+    name: "saltdog-go-redirector",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "go/index.html", source: build() });
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        // Both spellings: vite's dev server does not do the directory-slash
+        // redirect that GitHub Pages does, so /go and /go/ must both answer here
+        // or the dev experience differs from the deployed one.
+        const path = (req.url || "").split("?")[0];
+        if (path !== "/go" && path !== "/go/" && path !== "/go/index.html") return next();
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        // No caching in dev: the table is regenerated per request so a bangs.js
+        // edit shows up on reload without restarting the server.
+        res.setHeader("Cache-Control", "no-store");
+        res.end(build());
+      });
+    },
+  };
+}
 
 // Build stamp. CI exports GITHUB_RUN_NUMBER (a counter that increments every
 // run) and GITHUB_SHA, so each deployment gets a distinct build number without
@@ -15,7 +58,7 @@ const version = runNumber ? `${pkg.version}.${runNumber}` : `${pkg.version}-dev`
 // Relative base so dist/ is position-independent: GitHub Pages, S3, or a plain
 // file share all work with no rewrite rules (paired with hash-history routing).
 export default defineConfig({
-  plugins: [vue(), vuetify({ autoImport: true })],
+  plugins: [vue(), vuetify({ autoImport: true }), goRedirector()],
   base: "./",
   server: { port: 8773 },
   build: {

@@ -122,12 +122,19 @@ async function launch() {
  * console error/warning and uncaught exception seen while it was open — Vue's
  * "property was accessed during render but is not defined" arrives as a warning,
  * so warnings are failures here, not noise.
+ *
+ * `opts.watchNetwork` additionally enables the Network domain, blocks every URL
+ * off this origin, and records attempted requests in `page.requests`. Opt-in
+ * rather than always-on: it exists for the /go redirector, whose whole job is to
+ * navigate somewhere this test suite must never actually reach, and enabling it
+ * everywhere would change what the other checks are allowed to load.
  */
-async function withPage(url, body) {
+async function withPage(url, body, opts = {}) {
   const ws = new WebSocket(browser.wsUrl);
   await once(ws, "open");
 
   const problems = [];
+  const requests = [];
   const pending = new Map();
   let msgId = 0;
 
@@ -144,6 +151,11 @@ async function withPage(url, body) {
     if (m.method === "Runtime.exceptionThrown") {
       const d = m.params.exceptionDetails;
       problems.push(`exception: ${(d.exception?.description || d.text).slice(0, 300)}`);
+    }
+    // Every request the page ASKS for, whether or not it was allowed to happen.
+    // Recorded from requestWillBeSent so a blocked navigation still proves intent.
+    if (m.method === "Network.requestWillBeSent") {
+      requests.push({ url: m.params.request.url, type: m.params.type });
     }
     if (m.id && pending.has(m.id)) {
       pending.get(m.id)(m);
@@ -167,6 +179,23 @@ async function withPage(url, body) {
 
   await raw("Runtime.enable", {}, sid);
   await raw("Page.enable", {}, sid);
+
+  if (opts.watchNetwork) {
+    await raw("Network.enable", {}, sid);
+    // Zero egress. The assertion is made on `requestWillBeSent`, which fires
+    // when the page ASKS to navigate — before and independently of whether the
+    // host answers. So the check proves intent without a packet leaving, which
+    // is what lets it pass on a build machine with no network and mean the same
+    // thing there as it does here. Testing a redirect by letting it reach a
+    // CAC-gated `.mil` host would be both slow and a check that fails when the
+    // internet does, which teaches people to ignore it.
+    //
+    // Scoped to `.mil` rather than everything off-origin: the localhost preview
+    // server has to keep working, and a broad `https://*/*` would block the page
+    // under test from loading at all.
+    await raw("Network.setBlockedURLs", { urls: ["*://*.mil/*", "*://*.mil"] }, sid);
+  }
+
   await raw("Page.navigate", { url }, sid);
 
   /** Evaluate an expression in the page and return its value. */
@@ -194,7 +223,7 @@ async function withPage(url, body) {
     return false;
   };
 
-  const page = { evaluate, waitFor, problems, fail: (msg) => problems.push(msg) };
+  const page = { evaluate, waitFor, problems, requests, fail: (msg) => problems.push(msg) };
 
   try {
     await body(page);
@@ -1020,6 +1049,102 @@ async function checkCompanionLinks() {
 }
 
 /**
+ * The /go redirector: a real browser, a real query, a real navigation attempt.
+ *
+ * This is the check that matters most for this feature and the hardest one to do
+ * honestly. The unit tests prove the resolver and even run the emitted page's
+ * script against a stub `location` — but a stub cannot tell you that the page
+ * PARSES in a browser, that it is served at the path a search engine will hit, or
+ * that the inline script runs before anything else can interfere. Only loading
+ * it does that.
+ *
+ * Egress is blocked and the assertion is on the attempted request, so nothing
+ * leaves the machine and the result is identical offline. See `watchNetwork`.
+ *
+ * Two cases, because they exercise opposite halves:
+ *   ?q=nsips  must leave for NSIPS         — the redirect works
+ *   ?q=xyzzy  must NOT leave, and must land in the app with the query intact —
+ *             a miss is handed to the assistant instead of guessing a .mil host
+ */
+async function checkGoRedirect() {
+  const NSIPS = "https://www.nsips.cloud.navy.mil/";
+
+  // Directory form, exactly as GitHub Pages will resolve it: `…/go?q=%s` gets a
+  // 301 to `…/go/?q=%s` there (measured, not assumed — Pages preserves the query
+  // string across its directory-slash redirect). vite preview does not issue
+  // that 301, so the trailing slash is written out here.
+  const hit = await withPage(
+    `${BASE}/go/?q=nsips`,
+    async (page) => {
+      // Poll the recorded requests rather than the page's own state: by the time
+      // the navigation is attempted the document may be gone, so `evaluate` would
+      // race against its own teardown.
+      const deadline = Date.now() + 6000;
+      let attempt = null;
+      while (Date.now() < deadline && !attempt) {
+        attempt = page.requests.find((r) => /nsips\.cloud\.navy\.mil/.test(r.url));
+        if (!attempt) await new Promise((r) => setTimeout(r, 100));
+      }
+
+      if (!attempt) {
+        const seen = page.requests.map((r) => r.url).join(", ") || "(none)";
+        page.fail(`"go nsips" never tried to reach NSIPS. Requests seen: ${seen}`);
+        return;
+      }
+      if (attempt.url !== NSIPS) {
+        page.fail(`redirected to "${attempt.url}", expected exactly "${NSIPS}"`);
+      }
+      if (attempt.type !== "Document") {
+        page.fail(`NSIPS was requested as ${attempt.type}, not a navigation`);
+      }
+      // It must not have gone through the app first. The whole reason this is a
+      // hand-written page is that it beats Vue to the redirect; a Document
+      // request for the SPA entry means it didn't.
+      const bootedApp = page.requests.some((r) => r.type === "Document" && /\/index\.html|\/#\//.test(r.url));
+      if (bootedApp) page.fail("the redirector loaded the app before redirecting");
+    },
+    { watchNetwork: true },
+  );
+  record("go: ?q=nsips redirects to NSIPS", hit);
+
+  const miss = await withPage(
+    `${BASE}/go/?q=xyzzy`,
+    async (page) => {
+      // Lands in the app, which then renders the miss card. Waiting on the text
+      // rather than the URL because the hash route resolves before the view
+      // mounts, and asserting on `location` alone would pass with a blank page.
+      //
+      // Optional-chained because this check straddles a real document swap: the
+      // redirector replaces itself, and polling during the swap sees a document
+      // whose `body` is still null. Unguarded, that throws inside the page and
+      // lands in `problems` as a spurious failure of an otherwise-correct
+      // redirect — which is exactly what it did the first time.
+      const landed = await page.waitFor(
+        'document.body?.innerText?.includes("No shortcut for that yet") === true',
+        8000,
+      );
+      if (!landed) page.fail("an unknown query did not land on the /go page's miss card");
+
+      const href = await page.evaluate("location.href");
+      if (!/#\/go/.test(href || "")) page.fail(`unknown query ended up at "${href}"`);
+      // The query has to survive the hand-off, or the "ask the assistant" offer
+      // has nothing to ask about.
+      if (!/xyzzy/.test(href || "")) page.fail(`the query was dropped in transit: "${href}"`);
+      const offers = await page.evaluate('document.body?.innerText?.includes("xyzzy") === true');
+      if (!offers) page.fail("the miss card does not show what was searched for");
+
+      // Nothing off-origin was attempted for a query that resolves to nothing.
+      const leaked = page.requests.filter((r) => /\.mil/.test(r.url));
+      if (leaked.length) {
+        page.fail(`an unknown query tried to leave for ${leaked.map((r) => r.url).join(", ")}`);
+      }
+    },
+    { watchNetwork: true },
+  );
+  record("go: an unknown query lands in-app instead of guessing", miss);
+}
+
+/**
  * The assistant expands to fill the viewport, and the choice sticks.
  *
  * Measured in pixels rather than by class name, because every way this can fail
@@ -1262,6 +1387,7 @@ try {
   await checkMaps();
   await checkSystemLinks();
   await checkCompanionLinks();
+  await checkGoRedirect();
   await checkExpandChat();
   await checkPersistence();
   await checkTheme();

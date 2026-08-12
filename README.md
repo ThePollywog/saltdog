@@ -17,6 +17,7 @@ NOSC, or MNCC (1-833-330-MNCC).
 | **Knowledge** (`#/knowledge`) | 8 topics / 41 reference sections: annual checklist, EVAL–FITREP calendar, ranks for all six services, awards precedence, combatant commands, Navy fleets, joint staff codes, phonetic alphabet. Ranks show the real insignia; the COCOM and fleet pages carry a projected world map |
 | **Tools** (`#/tools`) | Readiness checklist, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, ribbon rack calculator, six-service rank explorer |
 | **Reference assistant** | Offline keyword search over all 47 cards (the 41 knowledge sections plus the 6 quick-links categories), with a WebGL orb. Not an AI, no network calls |
+| **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
 
 The 14 source PDFs ship in `public/pdf/` and every page links its own original,
@@ -37,11 +38,18 @@ npm run preview    # serve the built output
 works from a subdirectory, an S3 prefix, GitHub Pages, or a file share with **no
 rewrite rules and no server config**. Copy the folder and you're done.
 
+The one host-specific thing is `dist/go/`, which relies on the server resolving a
+directory request to `index.html`. GitHub Pages, S3 with an index document, and
+`vite preview` all do. A bare file share won't, in which case the shortcut URL is
+`…/go/index.html?q=%s` and everything else is unaffected. Paths on Pages are also
+case-sensitive, so the shortcut is lowercase (`/webnavfit/` resolves there and
+`/WEBNAVFIT/` 404s — that one cost a dead link in a sibling project's README).
+
 ## Verification
 
 ```bash
-npm test      # 134 tests: golden questions, corpus integrity, domain rules
-npm run smoke # builds, serves, drives real Chrome over 38 checks
+npm test      # 158 tests: golden questions, corpus integrity, domain rules
+npm run smoke # builds, serves, drives real Chrome over 40 checks
 npm run verify  # both
 ```
 
@@ -67,8 +75,14 @@ unit-testing actually repays here:
 - **The systems registry** — every id referenced by a checklist item, a
   procedure, a topic, or a quick-links entry resolves; every `portal` system's
   `via` resolves to something that actually has a URL; no system is defined and
-  never linked; and `quicklinks.js` contains no literal `http` at all, which is
-  what stops the addresses drifting back into two files.
+  never linked; and neither `quicklinks.js` nor `bangs.js` contains a literal
+  `http` at all, which is what stops the addresses drifting back into two files.
+- **The `/go` resolver** — that a miss stays a miss rather than guessing a
+  plausible `.mil` host, that only a `direct` system is ever allowed to
+  auto-redirect (asserted over the whole registry, so the invariant holds for
+  bangs that don't exist yet), and that the copy of the resolver inlined into the
+  static redirect page still resolves every key identically to the module it was
+  extracted from.
 
 `npm run smoke` drives the installed Chrome over CDP — no Puppeteer, no
 Playwright, no jsdom. It checks that all 20 routes mount without a single console
@@ -78,7 +92,8 @@ focus moved there*, the orb renders and is hidden from assistive tech, the ribbo
 rack draws real artwork in the right order, the world maps resolve to real
 geometry at the right scale, tool state survives a reload, the theme choice
 persists, the drawer's one outbound link still resolves to the exact external URL
-rather than a router path, and the search engine stays out of the first-paint
+rather than a router path, the `/go` redirector actually navigates a real browser
+to the real NSIPS address, and the search engine stays out of the first-paint
 waterfall.
 
 Four checks exist because a real defect got past everything else. The build, the
@@ -101,6 +116,14 @@ two of those runs came back green. One exposed a check that could not catch a
 mirrored world; the other exposed a stylesheet comment asserting something
 measurably false. Both are fixed. A check you have never seen fail is a
 decoration.
+
+The `/go` work paid the same way. Seventeen sabotage runs, and two came back
+green: both were checks that asserted the redirect page *contained the string*
+`location.replace` and `../#/go`, and both survived deleting the thing they
+claimed to test — the string still appeared in the other branch, and in a
+`noscript` link. They were replaced with a check that executes the page's script
+against a stub `location` and compares where it actually tried to go. Grepping for
+a behaviour is not testing it.
 
 The same practice audits the *claims* a check makes, not just its coverage. The
 four pinned checklist-note questions were first justified with six; the other two
@@ -297,6 +320,49 @@ internet on a `.mil` host means WAF-blocked or CAC-gated, **not** wrong hostname
 "Resolves in DNS and is documented" is the bar; "returned 200 from my laptop"
 would have deleted most of the correct entries in this file.
 
+**The `/go` redirector is a generated file, and only `direct` systems redirect.**
+Register `…/saltdog/go?q=%s` as a browser search engine with the keyword `go`, and
+`go nsips` in the address bar lands on NSIPS. GitHub Pages has no rewrite rules
+and cannot issue a redirect of its own, so this looked impossible until it was
+measured: Pages *does* do the directory-slash redirect, and it **preserves the
+query string** across it (`/saltdog/go?q=nsips` → `301` → `/saltdog/go/?q=nsips`).
+That one fact is what makes a shortcut possible on a static host.
+
+`dist/go/index.html` is emitted by a Vite plugin — not committed — because it
+carries a copy of both the bang table and the resolver, and a committed copy would
+drift from `systems.js` the first time an address changed. A stale redirect is
+worse than a missing one: it looks like it worked. The same renderer backs a dev
+middleware, so `npm run dev` serves byte-identical output (verified by diff), and
+the resolver is *extracted from* `lib/bangs.js` rather than retyped, with a test
+that runs both copies over every key.
+
+It is a lookup and not the retriever, deliberately. The scorer would have to be
+loaded into a page whose entire job is to redirect before Vue boots — the vite
+config works to defer that chunk — and more to the point, a TF-IDF margin of 0.31
+vs 0.29 is not an acceptable way to choose which `.mil` host somebody's browser
+opens. A table either matches or says it didn't. Where it doesn't, the query is
+handed to the assistant inside the app, which is the right tool for a *question*
+and the wrong one for a *destination*; `go how many points for a good year` misses
+the table and gets a cited answer.
+
+Only `reach: "direct"` auto-redirects, and the rest hand off to a card. This is
+the part that will look like a missing feature, so: `nsips-esr` resolves through
+`systemUrl()` to the NSIPS portal, and forwarding there would feel instant while
+leaving someone hunting a launch page for a link named "ESR". The registry's
+`then` field exists precisely because landing on the portal is half the trip, and
+an instruction cannot be shown to somebody you have already navigated away from.
+A `phone` bang doesn't auto-dial, and an `offline` one has nothing to dial. The
+invariant is asserted over the whole registry rather than over the single
+registered bang, so it holds for bangs that don't exist yet.
+
+**One bang is registered on purpose.** `nsips`, and nothing else. The mechanism —
+omnibox hand-off, three query shapes, the static page, the hand-back into the
+app — is the part that can be wrong in ways nobody notices; adding the other
+thirty systems is a data edit against machinery that has been tested. Doing both
+at once would have meant debugging thirty redirects without knowing whether a
+miss was the table or the plumbing. The `/go` page says so out loud, because a
+table headed "Registered shortcuts" with one row in it otherwise reads as broken.
+
 **Checklist ids are hand-written, never slugified from labels.** Deriving them
 from display text is the tempting shortcut, and it silently wipes everyone's
 progress the first time somebody fixes a typo in a label. A committed id
@@ -307,6 +373,23 @@ a formula correction heals old saved data instead of leaving a baked-in wrong
 number. Years are anniversary years, not fiscal years — binning by fiscal year is
 the classic bug in reservist tools, and it mis-files everything earned near the
 boundary.
+
+**The points tracker imports by paste, and will not offer a NSIPS login.** The
+obvious request is "sign into NSIPS and pull my points." It cannot be built here,
+for reasons that are structural rather than a matter of effort. NSIPS sits behind
+an F5 BigIP portal that answers `/` with a 302 to `/my.policy`; auth is CAC/PKI, a
+client certificate and PIN held by smartcard middleware no browser will delegate
+to a third-party page. It sends no `Access-Control-Allow-Origin`, so even with a
+valid session a page on another origin cannot read one byte of the response, and
+there is no documented public API. The only way around that is a server of ours
+collecting government credentials and proxying a `.mil` session — a phishing
+pattern, a violation of the "nothing is transmitted" promise on the About page,
+and not ours to authorize. So the user pastes the record they are already looking
+at, `lib/importPoints.js` reads the columns from the pasted header, and the panel
+says all of this out loud rather than leaving a dead "Connect" button as an
+explanation. Column order falls back to arithmetic — the total is the number equal
+to the sum of the others — and nothing is ever applied without a preview, because
+a silent mis-mapping would corrupt a 20-year record while looking like it worked.
 
 **Gold never carries body text in light mode.** `#C8A951` on the dark navy is
 8.05:1 (AAA); on white it is 2.27:1 and fails outright, so the light theme uses a

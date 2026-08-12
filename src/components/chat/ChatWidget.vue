@@ -21,7 +21,7 @@
  * from anywhere inside. The size preference persists: "I expanded it, why is it
  * small again" is the same complaint as the theme toggle losing its choice.
  */
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import {
   mdiArrowCollapse,
@@ -109,6 +109,29 @@ function navigate(recordOrRoute) {
 function askStarter(q) {
   send(q);
 }
+
+/**
+ * Open with a question already asked, from elsewhere in the app.
+ *
+ * A window event rather than a prop, a store, or a provide/inject: the widget
+ * lives in AppShell and the only current caller is a routed view several levels
+ * away, so anything else means threading state through components that have no
+ * other reason to know the assistant exists. This keeps the widget the only thing
+ * that knows how the widget opens.
+ *
+ * `onMounted`/`onUnmounted` rather than a bare addEventListener, because the
+ * widget is mounted once per app but HMR remounts it during development and a
+ * leaked listener would fire `send()` twice per event.
+ */
+function onExternalAsk(e) {
+  const q = String(e?.detail?.query ?? "").trim();
+  if (!q) return;
+  open.value = true;
+  send(q);
+}
+
+onMounted(() => window.addEventListener("saltdog:ask", onExternalAsk));
+onUnmounted(() => window.removeEventListener("saltdog:ask", onExternalAsk));
 </script>
 
 <template>

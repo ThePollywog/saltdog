@@ -41,6 +41,16 @@ const routes = [
     component: () => import("./views/AboutView.vue"),
     meta: { title: "About" },
   },
+  // Landing pad for the static /go redirector, which forwards here whenever a
+  // shortcut resolves to something that must not be an automatic redirect — a
+  // portal with a "then" step, a phone number, or nothing at all. Also the setup
+  // documentation, because a miss is when someone will read it.
+  {
+    path: "/go",
+    name: "go",
+    component: () => import("./views/GoView.vue"),
+    meta: { title: "Go shortcuts" },
+  },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];
 

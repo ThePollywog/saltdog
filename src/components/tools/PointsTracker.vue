@@ -11,7 +11,13 @@
  * everything earned near the boundary.
  */
 import { computed, ref } from "vue";
-import { mdiAlertOutline, mdiPlus, mdiTrashCanOutline, mdiUndoVariant } from "@mdi/js";
+import {
+  mdiAlertOutline,
+  mdiClipboardArrowDownOutline,
+  mdiPlus,
+  mdiTrashCanOutline,
+  mdiUndoVariant,
+} from "@mdi/js";
 import {
   GOOD_YEAR_MIN,
   INACTIVE_POINT_CAP,
@@ -21,6 +27,7 @@ import {
   nextYearLabel,
   summarize,
 } from "../../lib/points.js";
+import { parsePointRecord } from "../../lib/importPoints.js";
 import { useLocalStore } from "../../composables/useLocalStore.js";
 import SystemLinks from "../common/SystemLinks.vue";
 
@@ -31,6 +38,8 @@ const { state: store, reset } = useLocalStore("points", {
 
 const undo = ref(null);
 const snack = ref(false);
+/** Both "cleared" and "imported" are undoable, so the message has to say which. */
+const snackText = ref("");
 
 const summary = computed(() => summarize(store.value.years));
 const window_ = computed(() => anniversaryWindow(store.value.anniversaryMonthDay));
@@ -66,6 +75,7 @@ function update(i, field, value) {
 function clearAll() {
   undo.value = JSON.parse(JSON.stringify(store.value));
   reset();
+  snackText.value = "Points tracker cleared.";
   snack.value = true;
 }
 
@@ -80,6 +90,43 @@ const numeric = (v) => {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
+
+/* ---- Import from a pasted NSIPS point record ------------------------------ *
+ *
+ * Paste, not login. NSIPS is behind CAC/PKI on an F5 portal that sends no CORS
+ * headers, so a static site cannot read it even with a valid session — and the
+ * alternative, proxying government credentials through a server, is a phishing
+ * pattern this site will not implement. See lib/importPoints.js. The user is
+ * already looking at the record; copying it costs seconds and keeps NSIPS the
+ * source of truth without this page touching an account.
+ *
+ * Always previewed, never auto-applied. The parser recovers column order from
+ * the pasted header and falls back to arithmetic, which is good but not certain,
+ * and a silent mis-mapping would corrupt a 20-year record while looking fine.
+ */
+const showImport = ref(false);
+const pasted = ref("");
+const parsed = computed(() => (pasted.value.trim() ? parsePointRecord(pasted.value) : null));
+const importMode = ref("replace");
+
+/** Preview totals, using the same math the tracker itself uses. */
+const previewRows = computed(() => (parsed.value ? summarize(parsed.value.rows).rows : []));
+
+function applyImport() {
+  if (!parsed.value?.rows.length) return;
+  undo.value = JSON.parse(JSON.stringify(store.value));
+  // `mismatch` is a parser annotation for the preview, not tracker data.
+  const clean = parsed.value.rows.map(({ mismatch, ...row }) => row);
+  store.value = {
+    ...store.value,
+    years: importMode.value === "append" ? [...store.value.years, ...clean] : clean,
+  };
+  const n = clean.length;
+  pasted.value = "";
+  showImport.value = false;
+  snackText.value = `Imported ${n} year${n === 1 ? "" : "s"}. Check them against your ESR.`;
+  snack.value = true;
+}
 </script>
 
 <template>
@@ -147,6 +194,123 @@ const numeric = (v) => {
           Confirm against your ESR and NOSC before acting on it.
         </span>
       </v-alert>
+    </v-card>
+
+    <!--
+      IMPORT. Deliberately paste-based. NSIPS authenticates with CAC/PKI behind an
+      F5 portal and sends no CORS headers, so no browser page on another origin can
+      read a point record no matter who is logged in; and proxying a government
+      login through a server of ours is a phishing pattern, not a feature. The
+      honest version is to say that plainly and make the copy-paste fast, rather
+      than ship a "Connect to NSIPS" button that cannot work.
+    -->
+    <v-card class="pa-4 mb-6">
+      <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+        <div>
+          <h3 class="salt-heading text-subtitle-1 mb-1">Import from NSIPS</h3>
+          <p class="text-body-2 mb-0" style="max-width: 68ch; opacity: 0.85">
+            Open your Annual Retirement Point Record in NSIPS, select the table,
+            and paste it here — the years and point columns are read for you.
+          </p>
+        </div>
+        <v-btn
+          :prepend-icon="mdiClipboardArrowDownOutline"
+          variant="tonal"
+          size="small"
+          :aria-expanded="showImport"
+          @click="showImport = !showImport"
+        >
+          {{ showImport ? "Close" : "Paste a record" }}
+        </v-btn>
+      </div>
+
+      <v-expand-transition>
+        <div v-if="showImport" class="mt-4">
+          <!--
+            Stated up front, not in a footnote. Someone who came here hoping to
+            connect an account deserves to know why they are pasting instead —
+            and that this page never sees their credentials either way.
+          -->
+          <v-alert density="compact" class="mb-3">
+            <span class="text-body-2">
+              There is no automatic sign-in, and there will not be one. NSIPS uses
+              CAC/PKI and blocks cross-site reads, so no page outside
+              <span class="mono">.mil</span> can fetch your record — and this site
+              will not ask for a government login to work around that. Nothing you
+              paste leaves your browser.
+            </span>
+          </v-alert>
+
+          <v-textarea
+            v-model="pasted"
+            label="Paste your point record"
+            placeholder="FY24&#9;48&#9;14&#9;0&#9;15&#9;77"
+            rows="6"
+            auto-grow
+            max-rows="14"
+            spellcheck="false"
+            class="mono"
+            hint="Tabs, pipes, commas, or two or more spaces between columns"
+            persistent-hint
+          />
+
+          <template v-if="parsed">
+            <v-alert
+              v-for="(w, i) in parsed.warnings"
+              :key="i"
+              type="warning"
+              density="compact"
+              class="mt-3"
+              :icon="mdiAlertOutline"
+            >
+              <span class="text-body-2">{{ w }}</span>
+            </v-alert>
+
+            <template v-if="previewRows.length">
+              <div class="salt-eyebrow mt-4 mb-1">
+                Preview — {{ previewRows.length }} year{{ previewRows.length === 1 ? "" : "s" }}
+                <span v-if="parsed.usedHeader" style="opacity: 0.7">· columns read from your header</span>
+                <span v-else style="opacity: 0.7">· no header found, order assumed</span>
+              </div>
+              <v-table density="compact" class="mb-3">
+                <thead>
+                  <tr>
+                    <th>Year</th><th class="text-right">IDT</th><th class="text-right">AT</th>
+                    <th class="text-right">Corr.</th><th class="text-right">Mbr.</th>
+                    <th class="text-right">Total</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(r, i) in previewRows" :key="i">
+                    <td>{{ r.label }}</td>
+                    <td class="text-right mono">{{ r.idt }}</td>
+                    <td class="text-right mono">{{ r.at }}</td>
+                    <td class="text-right mono">{{ r.corr }}</td>
+                    <td class="text-right mono">{{ r.membership }}</td>
+                    <td class="text-right mono font-weight-medium">{{ r.total }}</td>
+                    <td class="text-right">
+                      <v-chip :color="r.isGood ? 'success' : 'warning'" size="x-small" label>
+                        {{ r.isGood ? "Good" : `${r.shortBy} short` }}
+                      </v-chip>
+                    </td>
+                  </tr>
+                </tbody>
+              </v-table>
+
+              <div class="d-flex flex-wrap align-center ga-4">
+                <v-radio-group v-model="importMode" inline hide-details density="compact">
+                  <v-radio label="Replace tracked years" value="replace" />
+                  <v-radio label="Add to them" value="append" />
+                </v-radio-group>
+                <v-spacer />
+                <v-btn color="primary" variant="flat" size="small" @click="applyImport">
+                  Apply {{ previewRows.length }} year{{ previewRows.length === 1 ? "" : "s" }}
+                </v-btn>
+              </div>
+            </template>
+          </template>
+        </div>
+      </v-expand-transition>
     </v-card>
 
     <h3 class="salt-heading text-h6 mb-3">Anniversary years</h3>
@@ -253,7 +417,7 @@ const numeric = (v) => {
     </p>
 
     <v-snackbar v-model="snack" :timeout="8000">
-      Points tracker cleared.
+      {{ snackText }}
       <template #actions>
         <v-btn variant="text" :prepend-icon="mdiUndoVariant" @click="restore">Undo</v-btn>
       </template>

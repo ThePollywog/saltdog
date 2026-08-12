@@ -42,6 +42,9 @@ import { AOR_ORDER, AOR_PATHS, LAND_PATH, MAP_H, MAP_W } from "../src/data/geo.j
 import { GEOGRAPHIC } from "../src/data/cocoms.js";
 import { COVERED_PAYGRADES, EMPTY_MONTHS, lookupPaygrade } from "../src/lib/evalRules.js";
 import { GOOD_YEAR_MIN, anniversaryWindow, summarize, totalYear } from "../src/lib/points.js";
+import { parsePointRecord } from "../src/lib/importPoints.js";
+import { BANG_ENTRIES, bangTable, normalizeKey, queryFromLocation, resolveBang } from "../src/lib/bangs.js";
+import { extractResolver, renderGoPage } from "./go-page.mjs";
 import {
   AWARDS,
   AWARD_BY_ID,
@@ -761,6 +764,185 @@ describe("retirement points", () => {
   });
 });
 
+/* ------------------------------------------------------------------ *
+ * Pasted point-record import
+ * ------------------------------------------------------------------ */
+
+/**
+ * The parser exists because NSIPS cannot be read from a browser on another
+ * origin (CAC/PKI behind an F5 portal, no CORS) and proxying a government login
+ * is not something this site will do. So the data arrives as a paste, and the
+ * risk moves from "can we fetch it" to "did we put the numbers in the right
+ * columns" — which is what these cover.
+ *
+ * The most valuable case is the LAST one. Silently mis-filing AT points as
+ * correspondence still produces a plausible-looking total, so the parser must
+ * report a disagreement rather than average it away.
+ */
+describe("pasted point-record import", () => {
+  it("reads a tab-separated record with a header", () => {
+    const { rows, usedHeader } = parsePointRecord(
+      ["Year\tInactive\tActive\tCorresp\tMembership\tTotal", "FY24\t48\t14\t0\t15\t77"].join("\n"),
+    );
+    assert.equal(usedHeader, true);
+    assert.equal(rows.length, 1);
+    assert.deepEqual(rows[0], { label: "FY24", idt: 48, at: 14, corr: 0, membership: 15 });
+  });
+
+  it("honours header ORDER rather than a fixed column layout", () => {
+    // Same numbers, columns transposed. A positional parser would swap AT and IDT.
+    const { rows } = parsePointRecord(
+      ["Year\tActive\tInactive\tMembership\tCorresp", "FY24\t14\t48\t15\t3"].join("\n"),
+    );
+    assert.equal(rows[0].at, 14, "AT must follow its header, not its position");
+    assert.equal(rows[0].idt, 48);
+    assert.equal(rows[0].corr, 3);
+  });
+
+  it("recovers the total column by arithmetic when there is no header", () => {
+    /**
+     * 48 + 14 + 0 + 15 = 77, so the 77 is identifiable as the total from the
+     * numbers alone — no header, no assumption about where NSIPS puts it.
+     *
+     * The total is placed in EVERY position, and that is the point of the loop.
+     * The first version of this test only tried it last, which is the one spot
+     * where the total harmlessly falls off the end of a four-field list: deleting
+     * the arithmetic detection entirely still passed. A check that only exercises
+     * the benign case is decoration. With the total first or in the middle, losing
+     * detection shifts every subsequent column and silently corrupts the row.
+     */
+    const parts = ["48", "14", "0", "15"];
+    for (let at = 0; at <= parts.length; at++) {
+      const cells = [...parts];
+      cells.splice(at, 0, "77");
+      const line = `FY24\t${cells.join("\t")}`;
+      const { rows, usedHeader } = parsePointRecord(line);
+      assert.equal(usedHeader, false, line);
+      assert.deepEqual(
+        { idt: rows[0].idt, at: rows[0].at, corr: rows[0].corr, membership: rows[0].membership },
+        { idt: 48, at: 14, corr: 0, membership: 15 },
+        `total at index ${at} was not recognized: "${line}"`,
+      );
+      assert.equal(totalYear(rows[0]).total, 77, line);
+    }
+  });
+
+  it("splits on runs of spaces and on pipes, not just tabs", () => {
+    for (const line of ["FY24   48   14   0   15", "FY24 | 48 | 14 | 0 | 15"]) {
+      const { rows } = parsePointRecord(line);
+      assert.equal(rows.length, 1, `failed to parse: ${line}`);
+      assert.equal(rows[0].idt, 48, `wrong IDT for: ${line}`);
+    }
+  });
+
+  it("keeps multiple years and their labels", () => {
+    const { rows } = parsePointRecord(
+      ["FY22\t24\t14\t0\t15", "FY23\t36\t14\t6\t15", "FY24\t48\t0\t0\t15"].join("\n"),
+    );
+    assert.deepEqual(rows.map((r) => r.label), ["FY22", "FY23", "FY24"]);
+    assert.equal(summarize(rows).goodYears, 3);
+  });
+
+  it("infers membership points from a stated total that omits them", () => {
+    // Columns add to 62; record says 77. The 15-point gap is membership.
+    const { rows, warnings } = parsePointRecord(
+      ["Year\tInactive\tActive\tCorresp\tTotal", "FY24\t48\t14\t0\t77"].join("\n"),
+    );
+    assert.equal(rows[0].membership, 15);
+    assert.equal(totalYear(rows[0]).total, 77);
+    assert.match(warnings.join(" "), /inferred 15 membership/i);
+  });
+
+  it("ignores blank lines, page furniture, and single-number footers", () => {
+    /**
+     * Footers are TAB-separated here on purpose. Written as "Total points: 812"
+     * with single spaces, the line collapses to one cell and never reaches the
+     * "needs two numbers" guard — so relaxing that guard left this test passing
+     * and the test proved nothing. A real paste out of a table carries tabs.
+     */
+    for (const footer of ["Total points:\t812", "Grand Total\t812", "Career total   812"]) {
+      const { rows } = parsePointRecord(
+        [
+          "ANNUAL RETIREMENT POINT RECORD",
+          "",
+          "Year\tInactive\tActive\tCorresp\tMembership",
+          "FY24\t48\t14\t0\t15",
+          "",
+          footer,
+        ].join("\n"),
+      );
+      assert.equal(rows.length, 1, `"${footer}" became a year row`);
+      assert.equal(rows[0].label, "FY24");
+    }
+  });
+
+  it("does not mistake a data row for the header and swallow it", () => {
+    /**
+     * Header detection keys on the ABSENCE of standalone numbers, not on counting
+     * keywords, and this is the case that forces it. "IDT 48 / AT 14 / 0 / 15"
+     * has two header-ish cells, so a keyword-counting detector consumes the line
+     * as column names — and the row does not merely land wrong, it disappears
+     * entirely. A year of points silently missing from a 20-year record is the
+     * worst outcome available to this parser, and it looks like nothing happened.
+     *
+     * What survives is asserted, not the exact mapping: cells like "IDT 48" are
+     * not integers, so the values read imperfectly. That is fine — an imperfect
+     * row is visible in the preview and fixable in two clicks. A vanished one is
+     * neither.
+     */
+    for (const line of ["IDT 48\tAT 14\t0\t15", "Drill\t48\tAnnual\t14"]) {
+      const { rows, usedHeader } = parsePointRecord(line);
+      assert.equal(usedHeader, false, `"${line}" was misread as a column header`);
+      assert.equal(rows.length, 1, `"${line}" produced no row — the data was swallowed`);
+    }
+  });
+
+  it("returns no rows, and says so, for input that is not a record", () => {
+    for (const junk of ["", "   ", "hello world", "see your NOSC"]) {
+      const { rows, warnings } = parsePointRecord(junk);
+      assert.equal(rows.length, 0, `parsed rows out of "${junk}"`);
+      assert.ok(warnings.length, `"${junk}" produced no explanation`);
+    }
+  });
+
+  it("reports a total it cannot reconcile instead of adjusting the numbers", () => {
+    /**
+     * The one that matters. If the columns disagree with the stated total and
+     * membership is already accounted for, the parser has mis-mapped something —
+     * and the failure is invisible, because every individual number looks fine.
+     * It must surface the disagreement and leave the values untouched, so the
+     * user fixes them in the preview rather than discovering it 20 years later.
+     */
+    const { rows, warnings } = parsePointRecord(
+      ["Year\tInactive\tActive\tCorresp\tMembership\tTotal", "FY24\t48\t14\t0\t15\t91"].join("\n"),
+    );
+    assert.deepEqual(
+      { idt: rows[0].idt, at: rows[0].at, corr: rows[0].corr, membership: rows[0].membership },
+      { idt: 48, at: 14, corr: 0, membership: 15 },
+      "values were altered to force the stated total to reconcile",
+    );
+    assert.ok(rows[0].mismatch, "an unreconcilable total was not flagged");
+    assert.match(warnings.join(" "), /add to 77 but the record states 91/i);
+  });
+
+  it("never emits NaN, negative, or non-integer point values", () => {
+    const messy = [
+      "Year\tInactive\tActive\tCorresp\tMembership",
+      "FY24\tn/a\t14\t-\t15",
+      "FY23\t1,024\t14\t0\t15",
+      "FY22\t12.5\t14\t0\t15",
+    ].join("\n");
+    for (const row of parsePointRecord(messy).rows) {
+      for (const f of ["idt", "at", "corr", "membership"]) {
+        assert.ok(
+          Number.isInteger(row[f]) && row[f] >= 0,
+          `${row.label}.${f} = ${row[f]} — points must be non-negative integers`,
+        );
+      }
+    }
+  });
+});
+
 describe("rank data", () => {
   it("covers all six services", () => {
     assert.equal(SERVICES.length, 6);
@@ -1260,5 +1442,261 @@ describe("awards and ribbon racks", () => {
       AWARD_CORRECTIONS.some((c) => /Warn in lieu/.test(c.note)),
       "the Silver/Gold Star legend typo is not footnoted",
     );
+  });
+});
+
+describe("go shortcuts", () => {
+  /**
+   * The /go redirector turns an address-bar query into a navigation, which makes
+   * it the one feature here that can send someone to the WRONG `.mil` host. So
+   * these tests care much less about "does nsips resolve" than about the two ways
+   * this breaks badly:
+   *
+   *   1. A miss that guesses. `unknown` must stay unknown — a scorer-style
+   *      near-match would forward a browser somewhere plausible and wrong.
+   *   2. A portal that gets treated as direct. NSIPS ESR resolves to the NSIPS
+   *      portal, so a regression collapsing `handoff` into `external` looks
+   *      perfect in a browser and silently drops the "select ESR" step that is
+   *      the only reason the user could find the page.
+   */
+  const table = bangTable();
+
+  it("every bang names a real system and resolves to a real target", () => {
+    // BANG_ENTRIES is built at import; a bad system id throws before this runs.
+    assert.ok(BANG_ENTRIES.length >= 1, "no bangs are registered");
+    for (const e of BANG_ENTRIES) {
+      assert.ok(SYSTEM_BY_ID.has(e.system), `bang target "${e.system}" is not a system`);
+      assert.equal(e.url, systemUrl(e.system), `bang "${e.system}" disagrees with the registry`);
+      assert.ok(e.keys.length, `bang "${e.system}" has no keys`);
+      for (const k of e.keys) {
+        assert.equal(k, normalizeKey(k), `key "${k}" is not in normalized form`);
+      }
+    }
+  });
+
+  it("holds no literal URL of its own", () => {
+    // Same rule as quicklinks.js: addresses live in systems.js and nowhere else.
+    // A bang table with its own copy of an address is the copy that goes stale,
+    // and a stale redirect is worse than a missing one because it looks like it
+    // worked.
+    const src = readFileSync(join(ROOT, "src/data/bangs.js"), "utf8");
+    assert.doesNotMatch(src, /https?:\/\//, "bangs.js has a literal URL — addresses belong in systems.js");
+  });
+
+  it("resolves the registered shortcut to the real NSIPS address", () => {
+    const r = resolveBang("nsips");
+    assert.equal(r.kind, "external");
+    assert.equal(r.url, systemUrl("nsips"));
+    // Pinned to the host, not just to the registry, so that a systems.js edit
+    // that breaks NSIPS fails HERE with a legible message rather than only in
+    // the registry's own suite.
+    assert.match(r.url, /^https:\/\/www\.nsips\.cloud\.navy\.mil\//);
+  });
+
+  it("only a direct system is allowed to auto-redirect", () => {
+    /**
+     * The invariant, stated over the whole registry rather than over the one
+     * bang that exists today: whatever the table grows to, `external` implies
+     * `reach === "direct"`. Written this way because the failure it guards
+     * against arrives with a future data edit, not with a code change — adding
+     * `{ keys: ["esr"], system: "nsips-esr" }` must not start forwarding people
+     * into a portal launch page with no instruction.
+     */
+    for (const s of SYSTEMS) {
+      const fake = [{ keys: ["x"], system: s.id, name: s.name, full: s.full ?? null,
+        desc: s.desc, reach: s.reach, url: systemUrl(s.id), via: viaLabel(s.id),
+        then: s.then ?? null, access: s.access, cac: s.cac, note: null }];
+      const r = resolveBang("x", fake);
+      if (s.reach === "direct") {
+        assert.equal(r.kind, "external", `direct system "${s.id}" should redirect`);
+        assert.ok(r.url, `direct system "${s.id}" redirected with no url`);
+      } else {
+        assert.equal(r.kind, "handoff", `${s.reach} system "${s.id}" must not auto-redirect`);
+      }
+    }
+  });
+
+  it("hands off a portal system with the click that follows it", () => {
+    const esr = SYSTEM_BY_ID.get("nsips-esr");
+    const fake = [{ keys: ["esr"], system: "nsips-esr", name: esr.name, full: esr.full,
+      desc: esr.desc, reach: esr.reach, url: systemUrl("nsips-esr"), via: viaLabel("nsips-esr"),
+      then: esr.then, access: esr.access, cac: esr.cac, note: null }];
+    const r = resolveBang("esr", fake);
+    assert.equal(r.kind, "handoff");
+    // The url still resolves (it's the portal) — which is exactly why `kind`
+    // alone is the thing under test. A handoff carrying a usable url is correct;
+    // a redirect to that same url is not.
+    assert.equal(r.url, systemUrl("nsips"));
+    assert.match(r.then ?? "", /ESR/, "the portal's follow-up click was dropped");
+    assert.match(r.via ?? "", /NSIPS/);
+  });
+
+  it("admits a miss instead of guessing a target", () => {
+    for (const miss of ["xyzzy", "capital of france", "nsipsx", "zz", "!!!", "   "]) {
+      const r = resolveBang(miss);
+      assert.equal(r.kind, "unknown", `"${miss}" should not resolve to anything`);
+      assert.ok(!("url" in r), `"${miss}" produced a redirect target`);
+    }
+  });
+
+  it("matches on identity, not on spelling", () => {
+    // "NSIPS", "nsips ", "N.S.I.P.S." are one request. Punctuation and case fall
+    // out in normalization, which is what lets a user type the way they talk.
+    for (const spelling of ["NSIPS", " nsips ", "N.S.I.P.S.", "Nsips", "ns ips"]) {
+      assert.equal(resolveBang(spelling).kind, "external", `"${spelling}" did not resolve`);
+    }
+  });
+
+  it("resolves a prefix, but never over an exact match", () => {
+    /**
+     * Prefix matching is a convenience ("go nsi") and a hazard: without the
+     * exact-match pass, a table containing both "at" and "atlas" would make the
+     * fully-typed "at" ambiguous, so the more precisely a user typed the worse
+     * the result would get. Tested with a synthetic pair because the real table
+     * has one entry and cannot exhibit it.
+     */
+    const fake = [
+      { keys: ["at"], system: "a", name: "A", reach: "direct", url: "https://a.example/", keysOnly: 1 },
+      { keys: ["atlas"], system: "b", name: "B", reach: "direct", url: "https://b.example/" },
+    ];
+    assert.equal(resolveBang("at", fake).system, "a", "an exact key lost to a longer one");
+    assert.equal(resolveBang("atl", fake).system, "b", "a unique prefix did not resolve");
+    const amb = resolveBang("a", fake);
+    assert.equal(amb.kind, "ambiguous", "a shared prefix should ask, not pick");
+    assert.equal(amb.candidates.length, 2);
+  });
+
+  it("reads the query from every shape a browser might send", () => {
+    /**
+     * Browsers disagree about where `%s` goes, and the person who set the
+     * shortcut up will not debug it. `?q=` is what Chrome's "Add search engine"
+     * produces; the bare and hash forms come from `…/go/?%s` and `…/go/#%s`,
+     * which are both things people register.
+     */
+    const cases = [
+      [{ search: "?q=nsips" }, "nsips"],
+      [{ search: "?query=nsips" }, "nsips"],
+      [{ search: "?nsips" }, "nsips"],
+      [{ hash: "#nsips" }, "nsips"],
+      [{ search: "?q=my+drill+points" }, "my drill points"],
+      [{ search: "?q=my%20drill%20points" }, "my drill points"],
+      [{ hash: "#my+drill+points" }, "my drill points"],
+      [{ search: "", hash: "" }, ""],
+      [{}, ""],
+      // A real search string that happens to contain "=" must not be mistaken
+      // for a key/value pair and silently dropped.
+      [{ search: "?q=a%3Db" }, "a=b"],
+    ];
+    for (const [loc, expect] of cases) {
+      assert.equal(queryFromLocation(loc), expect, `parsing ${JSON.stringify(loc)}`);
+    }
+  });
+
+  it("the inlined copy on the static page resolves exactly like the module", () => {
+    /**
+     * go/index.html cannot import an ES module — it has to carry the resolver as
+     * classic script text, and that copy is the one users actually hit. This
+     * evaluates the extracted source in a bare Function scope and re-runs every
+     * case above through it, so a drift between the tested resolver and the
+     * shipped one fails here.
+     *
+     * Extraction is by brace balance over named declarations, which is why
+     * `normalizeKey` is a function and not an arrow, and why
+     * `queryFromLocation` reads its argument's properties instead of
+     * destructuring in the signature. Both were arrows/destructured first and
+     * both produced a page that parsed and silently misbehaved.
+     */
+    const source = readFileSync(join(ROOT, "src/lib/bangs.js"), "utf8");
+    const inlined = extractResolver(source);
+    const make = new Function(`${inlined}\nreturn { normalizeKey, queryFromLocation, resolveBang };`);
+    const copy = make();
+
+    for (const q of ["nsips", "NSIPS", "N.S.I.P.S.", "xyzzy", "ns", "", "nsipsx", "capital of france"]) {
+      assert.deepEqual(
+        copy.resolveBang(q, table),
+        resolveBang(q, table.map((t) => ({ ...t }))),
+        `inlined resolver disagrees on "${q}"`,
+      );
+    }
+    for (const loc of [{ search: "?q=nsips" }, { search: "?nsips" }, { hash: "#nsips" }, {}]) {
+      assert.equal(copy.queryFromLocation(loc), queryFromLocation(loc));
+    }
+  });
+
+  it("the emitted page redirects from an inline script and pulls in nothing else", () => {
+    /**
+     * The point of a hand-written page is that it beats the app to the redirect.
+     * If it ever grows a <script src>, a module import, or a stylesheet request,
+     * it has stopped being that and nobody would notice from the behaviour —
+     * it would just be slower.
+     */
+    const html = renderGoPage(table, extractResolver(readFileSync(join(ROOT, "src/lib/bangs.js"), "utf8")));
+    assert.doesNotMatch(html, /<script[^>]*\ssrc=/i, "the go page loads an external script");
+    assert.doesNotMatch(html, /<link[^>]*rel=["']?stylesheet/i, "the go page loads a stylesheet");
+    assert.doesNotMatch(html, /\bimport\s|\bfrom\s+["']/, "the go page imports a module");
+    // The table has to be present as data, not merely referenced.
+    assert.match(html, /"nsips"/, "the bang table was not inlined");
+    assert.match(html, /nsips\.cloud\.navy\.mil/, "the target url was not inlined");
+    // Small enough to be free. The whole justification for not using the router
+    // is weight, so the weight is asserted.
+    assert.ok(html.length < 12000, `go page is ${html.length} bytes — it was meant to be tiny`);
+  });
+
+  it("the emitted page actually navigates, per query shape", () => {
+    /**
+     * RUN, don't grep. The first version of this asserted that the HTML
+     * *contained* `location.replace` and `../#/go`, and both survived sabotage:
+     * deleting the real redirect left the string in the fallback branch, and
+     * deleting the fallback left `../#/go` in the noscript <a href>. Two checks
+     * that could not fail, guarding the two things most worth guarding.
+     *
+     * So the page's script is executed here with a fake `location`, and what it
+     * asks for is compared against where it should go. `location.replace` and
+     * not `assign`, too — the redirector must not sit in history between the
+     * address bar and the destination, or Back bounces forward again.
+     */
+    const html = renderGoPage(table, extractResolver(readFileSync(join(ROOT, "src/lib/bangs.js"), "utf8")));
+    const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+    assert.ok(script, "the go page has no inline script at all");
+
+    /** Run the page's script against a stub location; return what it navigated to. */
+    const navigate = (loc) => {
+      const calls = [];
+      const fake = {
+        ...loc,
+        search: loc.search ?? "",
+        hash: loc.hash ?? "",
+        replace: (u) => calls.push(["replace", u]),
+        assign: (u) => calls.push(["assign", u]),
+      };
+      new Function("location", script)(fake);
+      assert.equal(calls.length, 1, `expected exactly one navigation, got ${calls.length}`);
+      assert.equal(calls[0][0], "replace", "the redirector used assign() and will poison the Back button");
+      return calls[0][1];
+    };
+
+    const nsips = systemUrl("nsips");
+    assert.equal(navigate({ search: "?q=nsips" }), nsips, "?q= form did not reach NSIPS");
+    assert.equal(navigate({ search: "?nsips" }), nsips, "bare ? form did not reach NSIPS");
+    assert.equal(navigate({ hash: "#nsips" }), nsips, "# form did not reach NSIPS");
+
+    // A miss must land in the app WITH the query intact, so the view can offer it
+    // to the assistant. Dropping the query is the quiet version of this failure.
+    assert.equal(navigate({ search: "?q=xyzzy" }), "../#/go?q=xyzzy");
+    assert.equal(navigate({ search: "?q=good%20year" }), "../#/go?q=good%20year");
+    // No query at all: the setup page, not a redirect to nowhere.
+    assert.equal(navigate({}), "../#/go");
+  });
+
+  it("the shortcut is documented where a user can find it", () => {
+    // A redirector nobody knows how to register is dead code. The view carries
+    // the setup steps, so this asserts the docs exist rather than that they are
+    // beautiful: the `%s` placeholder, and the browser that needs the caveat.
+    const view = readFileSync(join(ROOT, "src/views/GoView.vue"), "utf8");
+    assert.match(view, /%s/, "the search URL template is not shown");
+    assert.match(view, /Firefox/, "Firefox setup is undocumented");
+    assert.match(view, /Safari/, "Safari's lack of keyword search is not mentioned");
+    const router = readFileSync(join(ROOT, "src/router.js"), "utf8");
+    assert.match(router, /name: "go"/, "no /go route is registered for the page to hand off to");
   });
 });
