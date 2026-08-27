@@ -19,6 +19,7 @@ NOSC, or MNCC (1-833-330-MNCC).
 | **Reference assistant** | Offline keyword search over all 68 cards (the 59 knowledge sections plus the 9 quick-links categories), with a WebGL orb. Not an AI, no network calls |
 | **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
+| **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | All 68 sections again as 12 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
 
 The 14 source PDFs ship in `public/pdf/` and every page links its own original,
 so any transcription can be checked against the chart it came from.
@@ -48,9 +49,11 @@ case-sensitive, so the shortcut is lowercase (`/webnavfit/` resolves there and
 ## Verification
 
 ```bash
-npm test      # 158 tests: golden questions, corpus integrity, domain rules
-npm run smoke # builds, serves, drives real Chrome over 40 checks
+npm test      # 265 tests: golden questions, corpus integrity, domain rules
+npm run smoke # builds, serves, drives real Chrome over 54 checks
 npm run verify  # both
+
+node tools/sabotage.mjs   # 82 mutations to real source; every one must be caught
 ```
 
 `npm test` is `node --test` with zero dependencies. It covers the two things
@@ -83,6 +86,13 @@ unit-testing actually repays here:
   bangs that don't exist yet), and that the copy of the resolver inlined into the
   static redirect page still resolves every key identically to the module it was
   extracted from.
+- **The static reference pages** — that every page says what the app says. Every
+  string in the data must appear on the page it belongs to, and each field that
+  is deliberately *not* printed needs a named exemption with a reason, so a
+  renderer that drops a column or a row fails instead of shipping a page that
+  reads as complete. It caught one on the first run: citations were printing
+  `d.label` where the app prints `display(d)`, dropping the revision letter off
+  every instruction cited anywhere on the site.
 
 `npm run smoke` drives the installed Chrome over CDP — no Puppeteer, no
 Playwright, no jsdom. It checks that all 20 routes mount without a single console
@@ -145,6 +155,37 @@ Things that look like arbitrary choices but aren't:
 **Section anchors ride in a query param** (`#/knowledge/eval-fitrep?a=rules`),
 not a second hash. Double-hash URLs get mangled by Outlook, Teams, and chat
 link-scrubbers — which is exactly how this audience shares links.
+
+**The reference content is published twice, because a fragment is not a URL.**
+Hash routing is what makes `dist/` position-independent, and the price is that
+every one of the 68 reference sections — ~44,000 characters of transcribed charts
+— lives behind the single URL `/saltdog/`. A crawler sees one page. None of this
+content can rank for the questions it answers: *"navy warrant officer
+paygrades"*, *"what does J4 do"*, *"how many points is a good year"*.
+
+So `tools/prerender.mjs` emits a plain HTML file per topic at a real path
+(`/saltdog/knowledge/ranks/`) at build time, plus a hub at `/knowledge/` and
+`sitemap.xml`. No JavaScript on them at all; each links the interactive version
+and the source PDF.
+
+Switching to history routing and prerendering the app instead was the obvious
+alternative and it is worse: it needs the 404-based SPA fallback, it costs
+`base: './'`, and it orphans every hash link already shared — including the one in
+the sibling homepage's FAQ. Static siblings *alongside* the hash app cost none of
+that.
+
+What is duplicated is the **presentation**, not the data: these renderers are a
+second implementation of `TopicSection.vue`, because a Vue template can't run in
+Node without dragging Vuetify through SSR. That's the real risk in the file, so it
+is guarded rather than promised. `SECTION_RENDERERS` is keyed by `section.kind`
+and a kind with no entry **throws the build** instead of emitting an empty section
+that would then be indexed as thin content; and the test described above requires
+every string in the data to reach the page, with a named exemption and a reason for
+each field deliberately withheld.
+
+`<lastmod>` is the git commit date of `src/data/`, not the build date. Google reads
+that field only while it stays honest, and a sitemap claiming every page changed on
+every deploy is one it learns to ignore.
 
 **Data is authored once and derived twice.** `src/data/*.js` are the single
 source of truth; `src/lib/corpus.js` derives one search record *per section* (so
@@ -451,6 +492,9 @@ src/
 tools/
 ├── verify-corpus.mjs   node --test suite
 ├── smoke.mjs           headless-Chrome route + interaction checks
+├── sabotage.mjs        breaks real source 82 ways, asserts the suite notices
+├── prerender.mjs       the 12 static, crawlable reference pages + sitemap.xml
+├── go-page.mjs         the static /go bang redirector
 ├── probe.mjs           retrieval diagnostic
 ├── extract-ribbons.mjs cuts the 68-ribbon sprite sheet from the source PDF
 ├── extract-ranks.mjs   cuts the 126-insignia sheet from the six rank charts
@@ -461,8 +505,10 @@ tools/
 One generic `KnowledgeView` driven by `/knowledge/:topicId` against the registry
 replaces what would have been seven near-identical views — and seven places to
 fix a rendering bug. Every section is a `kind` (`links`, `checklist`, `steps`,
-`kv`, `code-cards`, `eval-schedule`, `phonetic`, `ranks`, `awards`, `map`,
-`table`) dispatched by `TopicSection.vue`.
+`verbatim`, `kv`, `code-cards`, `eval-schedule`, `phonetic`, `ranks`, `awards`,
+`map`, `directives`, `table`) dispatched by `TopicSection.vue` — and, for the
+static pages, by `SECTION_RENDERERS` in `tools/prerender.mjs`, where a kind with
+no entry fails the build.
 
 The interactive tools are listed once, in `src/data/tools.js`, because the tab bar,
 the nav drawer, and the About page's count were three hardcoded copies — and the

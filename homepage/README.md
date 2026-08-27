@@ -11,7 +11,7 @@ either app is a system of record.
 homepage/
 ├── index.html          the page — markup, inline CSS, structured data
 ├── 404.html            served for every unresolved path on the whole origin
-├── robots.txt          crawl policy for the whole origin
+├── robots.txt          crawl policy for the whole origin; names both sitemaps
 ├── sitemap.xml         three URLs: /, /saltdog/, /webnavfit/
 ├── site.webmanifest    name, theme colour, and the PWA icon set
 ├── .nojekyll           tells Pages to publish the files as-is
@@ -65,7 +65,8 @@ Roughly in order of how much it matters:
 | **One `<h1>`, a sentence** | The wordmark in the masthead is a `<p>` on purpose: spending the one strongest heading signal on a brand string already present in the title, the URL and the OG tags is a waste. |
 | **Semantic structure** | `header` / `main` / `section[aria-labelledby]` / `footer`, headings that never skip a level, a real `<dl>` for the FAQ, real `<a>` elements for every link (there is no JS to intercept a click anyway). |
 | **Speed** | One request, no blocking resources, no layout shift. Core Web Vitals is a real ranking input and this is the cheapest place to win it outright. |
-| **`robots.txt` + `sitemap.xml` at the origin root** | On a user site these are the *only* place they can live for the whole origin — a project repo cannot publish a sitemap a crawler will trust for `/saltdog/`. So this folder is what gets those two apps crawled properly. |
+| **`robots.txt` + `sitemap.xml` at the origin root** | On a user site these are the *only* place they can live for the whole origin — a project repo cannot publish a `robots.txt` a crawler will read. So this folder is what gets those two apps crawled properly. |
+| **Two `Sitemap:` lines** | The root `sitemap.xml` here lists the three sites and is hand-maintained. The second line points at `/saltdog/sitemap.xml`, which SALTDOG's own build generates — a sitemap may only list URLs at or below its own path, so the ~12 static reference pages under `/saltdog/knowledge/` can only be declared from inside that folder, and this `robots.txt` is how a crawler learns that file exists. Multiple `Sitemap:` lines are allowed, and splitting them this way keeps each `<lastmod>` owned by whatever actually knows when the content changed. |
 | **Open Graph + Twitter card** | Not a ranking factor. It is a click-through factor, and it is how the link looks when it is pasted into the group chat where this audience actually shares things. |
 | **`max-image-preview:large`** | The one robots directive that changes anything; without it the preview may be a thumbnail or nothing. |
 | **JSON-LD** | See below — worth having, worth being honest about. |

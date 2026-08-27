@@ -574,6 +574,225 @@ const MUTATIONS = [
     repl: ``,
     breaks: "ladder on a ship",
   },
+
+  // --- static reference pages ---------------------------------------------
+  //
+  // These renderers are a second implementation of TopicSection.vue, so the
+  // mutations here are mostly "the copy quietly says less than the original".
+  {
+    // The failure the SECTION_RENDERERS design exists to make loud: a kind in the
+    // data with nothing to render it.
+    file: "tools/prerender.mjs",
+    find: "  phonetic: (s) =>",
+    repl: "  phonetics: (s) =>",
+    breaks: "every section kind in the data has a renderer",
+  },
+  {
+    // ...and the same defect with the throw defanged, which is how it would ship
+    // as a blank section instead of a red build.
+    file: "tools/prerender.mjs",
+    find: "  const render = SECTION_RENDERERS[section.kind];",
+    repl: "  const render = SECTION_RENDERERS[section.kind] ?? (() => \"\");",
+    breaks: "an unknown section kind throws",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: "    ...topics.map((t) => ({",
+    repl: "    ...topics.slice(1).map((t) => ({",
+    breaks: "emits one page per topic",
+  },
+  {
+    // A table loses a column. The page still renders, still has every row, and
+    // reads as complete unless you happen to know the chart.
+    file: "tools/prerender.mjs",
+    find: '        { key: "abbr", title: "Abbr.", mono: true },',
+    repl: "",
+    count: 2, // the ranks tables and the awards table
+    breaks: "every string in the data reaches the page",
+  },
+  {
+    // A row-level field stops being printed. This is the checklist note, the
+    // sentence that says WHY the item is on the list.
+    file: "tools/prerender.mjs",
+    find: '${i.note ? `          <p class="dim">${esc(i.note)}</p>` : ""}',
+    repl: "",
+    breaks: "every string in the data reaches the page",
+  },
+  {
+    // A data field is renamed and the exemption that covered it now covers
+    // nothing — the state in which the coverage test has a hole and looks fine.
+    file: "src/data/checklist.js",
+    find: "  cadence:",
+    repl: "  cadenceLabel:",
+    count: 7,
+    breaks: "no exemption in NOT_PRINTED is stale",
+  },
+  {
+    // The other half of an exemption: "not printed, because it is resolved to
+    // something that IS printed" — with the resolver emitting nothing.
+    file: "tools/prerender.mjs",
+    find: "  if (!ds.length) return \"\";",
+    repl: "  if (ds.length >= 0) return \"\";",
+    breaks: "resolved by a lookup",
+  },
+  {
+    // The real regression this replaced: citations printing `d.label` where
+    // DirectiveRefs.vue prints `display(d)`, dropping the revision letter off
+    // every instruction cited anywhere on the site.
+    file: "tools/prerender.mjs",
+    find: "      const label = esc(display(d));",
+    repl: "      const label = esc(d.label);",
+    breaks: "resolved by a lookup",
+  },
+  {
+    // Print the warrant note unconditionally, which diverges from the app on
+    // exactly one of six services.
+    file: "tools/prerender.mjs",
+    find: "      !svc.warrant?.length && svc.warrantNote",
+    repl: "      svc.warrantNote",
+    breaks: "warrant note is withheld exactly where the app withholds it",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: "          const value = custom ?? esc(row[c.key] ?? \"\");",
+    repl: "          const value = custom ?? esc(row);",
+    breaks: "nothing renders as undefined",
+  },
+  {
+    // Stop escaping ampersands. "Awards & Precedence" becomes an invalid entity
+    // reference, and nothing about the rendered page looks wrong.
+    file: "tools/prerender.mjs",
+    find: "    .replace(/&/g, \"&amp;\")\n",
+    repl: "",
+    breaks: "every ampersand in the markup is a real entity",
+  },
+  {
+    // The inverse, and the more interesting mistake: escaping the JSON-LD, which
+    // is raw text, so Google reads the literal characters "&amp;" in the name.
+    file: "tools/prerender.mjs",
+    find: "        name: `${topic.title} — SALTDOG`,",
+    repl: "        name: esc(`${topic.title} — SALTDOG`),",
+    breaks: "JSON-LD is NOT entity-escaped",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: '      <h2 id="sec-${esc(section.id)}-h">',
+    repl: '      <h3 id="sec-${esc(section.id)}-h">',
+    breaks: "headings never skip a level",
+  },
+  {
+    // og:url pointing at the site root instead of the page. Plausible, harmless
+    // looking, and it tells every social crawler the wrong URL.
+    file: "tools/prerender.mjs",
+    find: '    <meta property="og:url" content="${esc(canonical)}" />',
+    repl: '    <meta property="og:url" content="${esc(ORIGIN + BASE_PATH)}" />',
+    breaks: "canonical, og:url, and the JSON-LD @id",
+  },
+  {
+    // One `../` for every page, which is correct for quick-links/ and wrong for
+    // all eleven knowledge pages.
+    file: "tools/prerender.mjs",
+    find: '  return "../".repeat(pagePath.split("/").length - 1);',
+    repl: '  return "../";',
+    breaks: "relative prefixes match the depth",
+  },
+  {
+    // Stop rewriting url(./img/…). The sprite sheet then resolves against the
+    // document, so every insignia and every ribbon 404s on a nested page.
+    file: "tools/prerender.mjs",
+    find: "String(v).replace(/url\\(\\.\\//g, `url(${prefix}`)",
+    repl: "String(v)",
+    breaks: "relative prefixes match the depth",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: '<a href="${prefix}pdf/${esc(svc.sourcePdf)}" download>',
+    repl: '<a href="${prefix}pdfs/${esc(svc.sourcePdf)}" download>',
+    breaks: "every local reference resolves to something that exists",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: "  return `    <footer>",
+    repl: "  return `    <script>console.log(1)</script>\n    <footer>",
+    breaks: "the only script on these pages is structured data",
+  },
+  {
+    // The last breadcrumb self-links, which is how a trail ends up in a loop.
+    file: "tools/prerender.mjs",
+    find: '          { "@type": "ListItem", position: 3, name: topic.title },',
+    repl: '          { "@type": "ListItem", position: 3, name: topic.title, item: url },',
+    breaks: "breadcrumb is ordered",
+  },
+  {
+    // The hub drops a card. Since the hub is the only path a crawler has into
+    // these pages, a card missing from it is a page that will never be found.
+    file: "tools/prerender.mjs",
+    find: "  const cards = topics\n",
+    repl: "  const cards = topics\n    .slice(1)\n",
+    breaks: "the hub reaches every card",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: "          <strong>Unofficial.</strong>",
+    repl: "          <strong>Note.</strong>",
+    breaks: "every page carries the disclaimer",
+  },
+  {
+    // The static URL and the hash route drift apart, so "open the interactive
+    // version" lands on the catch-all redirect instead of the page.
+    file: "tools/prerender.mjs",
+    find: '  return topicId === "quicklinks" ? "#/quick-links" : `#/knowledge/${topicId}`;',
+    repl: '  return topicId === "quicklinks" ? "#/quicklinks" : `#/knowledge/${topicId}`;',
+    breaks: "hash route each page advertises",
+  },
+  {
+    // The hub is the crawl entry point AND the page most likely to be the first
+    // one a reader ever sees, so it is the last one that should be a dead end.
+    file: "tools/prerender.mjs",
+    find: '          <a class="btn" href="${prefix}#/knowledge">Open the interactive version</a>\n',
+    repl: "",
+    breaks: "hash route each page advertises",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: "  const title = `${topic.title} — SALTDOG`;",
+    repl: "  const title = topic.title;",
+    breaks: "titles and descriptions are written to survive",
+  },
+  {
+    // The exact regression the two-gold split exists to prevent: reuse the bright
+    // gold in light mode, where it is 2.27:1 on white.
+    file: "tools/prerender.mjs",
+    find: "          --gold: #8a6d1f;",
+    repl: "          --gold: #c8a951;",
+    breaks: "palette still matches the Vuetify themes",
+  },
+  {
+    file: "tools/prerender.mjs",
+    find: "    `${ORIGIN}${BASE_PATH}knowledge/`,\n",
+    repl: "",
+    breaks: "sitemap lists exactly the pages emitted",
+  },
+  {
+    // A looser date check, which is how "01/01/2026" ends up in every <lastmod>
+    // and Google learns to stop reading the file.
+    file: "tools/prerender.mjs",
+    find: "  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(lastmod))) {",
+    repl: "  if (!/\\d{4}/.test(String(lastmod))) {",
+    breaks: "renderAll refuses a lastmod",
+  },
+  {
+    file: "homepage/robots.txt",
+    find: "Sitemap: https://thepollywog.github.io/saltdog/sitemap.xml",
+    repl: "",
+    breaks: "declared to the sibling homepage's crawl entry points",
+  },
+  {
+    file: "homepage/index.html",
+    find: '<a href="saltdog/knowledge/">One-page reference cards</a>',
+    repl: "One-page reference cards",
+    breaks: "declared to the sibling homepage's crawl entry points",
+  },
 ];
 
 // --- harness ---------------------------------------------------------------

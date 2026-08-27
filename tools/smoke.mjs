@@ -1554,6 +1554,133 @@ async function checkAboutStorage() {
 
 /* -------------------------------------------------------------------- main */
 
+/**
+ * The static reference pages, as actually built and served.
+ *
+ * verify-corpus proves what the generator RETURNS. It cannot prove that vite
+ * emitted those bytes to those paths, that the sprite sheet the rewritten
+ * `url(../../img/…)` points at is in dist/ at all, or that a page whose every
+ * asset 404s still returns 200 and looks fine at a glance — which it does. That
+ * last one is the whole reason this runs in a browser: a wrong `../` count is
+ * invisible in the markup, invisible in the tests, and invisible on the page
+ * except that the insignia column is empty.
+ */
+async function checkStaticPages() {
+  const PAGES = [
+    ["knowledge/", "Navy reference cards"],
+    ["quick-links/", "Navy System Quick Links"],
+    ["knowledge/ranks/", "Master Chief Petty Officer"],
+    ["knowledge/awards/", "Medal of Honor"],
+    ["knowledge/doctrine/", "I am a United States Sailor."],
+    ["knowledge/directives/", "BUPERSINST"],
+  ];
+
+  for (const [path, expect] of PAGES) {
+    const problems = await withPage(
+      `${BASE}/${path}`,
+      async (page) => {
+        const found = await page.waitFor(
+          `document.body?.innerText?.includes(${JSON.stringify(expect)}) === true`,
+        );
+        if (!found) page.fail(`missing expected text: "${expect}"`);
+
+        // No JavaScript at all. Any <script> other than the JSON-LD block means
+        // the page is no longer the thing that paints from one request, and the
+        // app's own entry bundle being pulled in here would mean the file was
+        // overwritten by vite rather than emitted alongside it.
+        const scripts = await page.evaluate(
+          'document.querySelectorAll(\'script:not([type="application/ld+json"])\').length',
+        );
+        if (scripts !== 0) page.fail(`${scripts} executable <script> tag(s) on a static page`);
+
+        // Every subresource the page asked for came back. This is the assertion
+        // that a wrong relative prefix cannot survive.
+        const failedUrls = await page.evaluate(`(async () => {
+          const urls = [...document.querySelectorAll("[src], link[href]")].map(
+            (el) => el.src || el.href,
+          );
+          for (const el of document.querySelectorAll('[style*="url("]')) {
+            const m = /url\\((?:"|')?([^"')]+)/.exec(el.getAttribute("style"));
+            if (m) urls.push(new URL(m[1], location.href).href);
+          }
+          const bad = [];
+          // Same-origin only. rel=canonical is a <link href> pointing at the real
+          // github.io URL, and fetching it would make this check depend on the
+          // internet to say anything about a local build.
+          const local = [...new Set(urls)].filter((u) => new URL(u).origin === location.origin);
+          for (const u of local) {
+            try {
+              const res = await fetch(u, { method: "GET" });
+              if (!res.ok) bad.push(u + " -> " + res.status);
+            } catch (err) {
+              bad.push(u + " -> " + err.message);
+            }
+          }
+          return bad.join(", ");
+        })()`);
+        if (failedUrls) page.fail(`subresources did not load: ${failedUrls}`);
+
+        // A static page that scrolls sideways on a phone is the one presentation
+        // defect these files can have, because five-column tables are the point.
+        const overflow = await page.evaluate(
+          "document.documentElement.scrollWidth - document.documentElement.clientWidth",
+        );
+        if (overflow > 0) page.fail(`${overflow}px of horizontal overflow at the default width`);
+
+        // The link into the app is the page's whole reason for existing past the
+        // first read, and the catch-all redirect would swallow a wrong route
+        // silently.
+        const href = await page.evaluate(
+          'document.querySelector("main a.btn")?.getAttribute("href") ?? ""',
+        );
+        if (!href.includes("#/")) page.fail(`no "open the interactive version" link (got "${href}")`);
+      },
+      { watchNetwork: true },
+    );
+    record(`static: /${path} paints with no JavaScript`, problems);
+  }
+
+  // The payoff case, spelled out: the rank insignia are CSS background sprites
+  // positioned out of one PNG, and the URL in that background shorthand is the
+  // one path on these pages that is rewritten rather than written.
+  const sprites = await withPage(`${BASE}/knowledge/ranks/`, async (page) => {
+    await page.waitFor('document.querySelectorAll(".insignia").length > 0');
+    const bad = await page.evaluate(`(async () => {
+      const els = [...document.querySelectorAll(".insignia")];
+      const urls = new Set();
+      for (const el of els) {
+        const m = /url\\((?:"|')?([^"')]+)/.exec(getComputedStyle(el).backgroundImage || "");
+        if (m) urls.add(new URL(m[1], location.href).href);
+      }
+      if (!urls.size) return "no .insignia element has a background image";
+      for (const u of urls) {
+        const res = await fetch(u);
+        if (!res.ok) return u + " -> " + res.status;
+        const blob = await res.blob();
+        if (blob.size < 1000) return u + " is only " + blob.size + " bytes";
+      }
+      return "";
+    })()`);
+    if (bad) page.fail(bad);
+  });
+  record("static: rank insignia sprites resolve through the rewritten prefix", sprites);
+
+  // The sitemap the build wrote, fetched as a crawler would.
+  const sitemap = await withPage(`${BASE}/sitemap.xml`, async (page) => {
+    const xml = await page.evaluate(`(async () => (await fetch("${BASE}/sitemap.xml")).text())()`);
+    if (!xml || !xml.includes("<urlset")) {
+      page.fail("sitemap.xml was not emitted by the build");
+      return;
+    }
+    const count = xml.split("<loc>").length - 1;
+    if (count < 13) page.fail(`sitemap lists only ${count} URLs`);
+    if (!/<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/.test(xml)) {
+      page.fail("lastmod is not a W3C date — the build's git lookup fell through");
+    }
+  });
+  record("static: sitemap.xml is served and dated", sitemap);
+}
+
 const server = SERVE ? await startPreview() : null;
 if (!SERVE && !(await waitForServer(BASE, 5000))) {
   console.error(`Nothing is serving ${BASE}.`);
@@ -1579,6 +1706,7 @@ try {
   await checkPersistence();
   await checkTheme();
   await checkAboutStorage();
+  await checkStaticPages();
 } finally {
   // Kill both even if a check threw, or the run leaves a Chrome and a vite
   // holding port 8774 behind for the next invocation to trip over.

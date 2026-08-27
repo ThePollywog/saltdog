@@ -46,6 +46,17 @@ import { parsePointRecord } from "../src/lib/importPoints.js";
 import { BANG_ENTRIES, bangTable, normalizeKey, queryFromLocation, resolveBang } from "../src/lib/bangs.js";
 import { extractResolver, renderGoPage } from "./go-page.mjs";
 import {
+  BASE_PATH,
+  ORIGIN,
+  RENDERABLE_KINDS,
+  canonicalFor,
+  hashRouteFor,
+  pagePathFor,
+  prefixFor,
+  renderAll,
+  renderSection,
+} from "./prerender.mjs";
+import {
   AWARDS,
   AWARD_BY_ID,
   CORRECTIONS as AWARD_CORRECTIONS,
@@ -56,7 +67,7 @@ import {
 import { TOOLS } from "../src/data/tools.js";
 import { GROUPS as CHECKLIST_GROUPS, HOWTO } from "../src/data/checklist.js";
 import { CATEGORIES } from "../src/data/quicklinks.js";
-import { SYSTEMS, SYSTEM_BY_ID, systemUrl, viaLabel } from "../src/data/systems.js";
+import { SYSTEMS, SYSTEM_BY_ID, systemUrl, systemsFor, viaLabel } from "../src/data/systems.js";
 import { deviceSummary, devicesFor, layoutRack } from "../src/lib/ribbons.js";
 import {
   DIRECTIVES,
@@ -2907,5 +2918,618 @@ describe("go shortcuts", () => {
     assert.match(view, /Safari/, "Safari's lack of keyword search is not mentioned");
     const router = readFileSync(join(ROOT, "src/router.js"), "utf8");
     assert.match(router, /name: "go"/, "no /go route is registered for the page to hand off to");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 12. Static reference pages
+ * ------------------------------------------------------------------ */
+
+/**
+ * These tests exist because the static pages are a SECOND implementation of
+ * TopicSection.vue. That duplication is unavoidable — a Vue template cannot run
+ * in Node without dragging Vuetify through SSR — so instead of pretending
+ * otherwise, it is made detectable from two directions:
+ *
+ *  1. A section `kind` with no entry in SECTION_RENDERERS throws at build time.
+ *     Adding a kind to TopicSection.vue and forgetting this file fails the build
+ *     instead of quietly emitting a page missing a whole section.
+ *  2. Every string in the data must appear on the page it belongs to, with a
+ *     named exemption for each field that is deliberately not printed. A renderer
+ *     that drops rows, or a table that loses a column, fails — which is what
+ *     makes "the static page says the same thing as the app" a test rather than a
+ *     claim.
+ *
+ * The rest is agreement between copies that cannot be deduplicated because the
+ * specs demand absolute URLs: canonical, og:url, JSON-LD @id, sitemap <loc>.
+ */
+
+const LASTMOD = "2026-01-01";
+const RENDERED = renderAll({ lastmod: LASTMOD });
+const PAGE_BY_NAME = new Map(RENDERED.map((p) => [p.fileName, p.source]));
+const HTML_PAGES = RENDERED.filter((p) => p.fileName.endsWith(".html"));
+
+/** The page's text as a reader sees it: no markup, no entities, one space. */
+function visibleText(html) {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<script[\s\S]*?<\/script>/g, " ")
+    .replace(/<style[\s\S]*?<\/style>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Every string leaf of a data object, with a stable dotted path. */
+function* leafStrings(value, path = "") {
+  if (typeof value === "string") {
+    yield [path, value];
+  } else if (Array.isArray(value)) {
+    for (const v of value) yield* leafStrings(v, `${path}[]`);
+  } else if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) yield* leafStrings(v, path ? `${path}.${k}` : k);
+  }
+}
+
+/**
+ * Fields whose text is deliberately NOT printed on the static page, each with the
+ * reason. A path not listed here and not on the page is a dropped fact.
+ *
+ * A trailing `.*` exempts a subtree. Every entry is asserted to still match
+ * something, so a field that gets renamed or deleted surfaces as a stale
+ * exemption rather than silently widening the hole.
+ */
+const NOT_PRINTED = new Map([
+  ["id", "the section anchor — emitted as id=\"sec-…\", not as text"],
+  ["kind", "selects the renderer"],
+  ["keywords[]", "search index only; corpus.js weights them 2.5x and printing them would be keyword stuffing"],
+  ["refs[]", "directive ids, resolved to their labels by refs()"],
+  ["systems[]", "system ids, resolved to names and URLs by systemLinks()"],
+  ["cadence", "consumed by lib/due.js as the due-date reason line; TopicSection does not print it either"],
+  ["columns[].key", "the row property name, not a caption"],
+  ["map.label", "the map SVG's aria-label, and these pages do not draw the map"],
+  ["rows[].id", "stable key for persistence and citations"],
+  ["rows[].group", "resolved to the group label, which IS printed"],
+  ["rows[].refs[]", "directive ids, resolved by refs()"],
+  ["rows[].keywords[]", "search index only"],
+  ["rows[].systems[]", "system ids, resolved to names and URLs by systemLinks()"],
+  ["rows[].devices[]", "device ids; the rack builder resolves them, the reference table does not"],
+  ["rows[].howto", "id of the how-to section the checklist tool links to"],
+  ["rows[].library", "resolved to a human name by libraryName()"],
+  ["rows[].parent", "resolved to \"article of RESPERSMAN\""],
+  ["rows[].url", "emitted as the href, not as text"],
+  ["rows[].reach", "selects how the row is reached (web/phone/CAC), not a label"],
+  ["rows[].due.*", "consumed by lib/due.js; the static page is not a deadline calculator"],
+  ["rows.id", "the service id in a ranks section"],
+  ["rows.sourcePdf", "linked as a download, not printed"],
+  ["rows.warrantNote", "printed ONLY where the app prints it — see the dedicated test below"],
+  ["rows.enlisted[].variants[]", "alternate titles for search; neither view prints them"],
+]);
+
+function isExempt(path) {
+  if (NOT_PRINTED.has(path)) return true;
+  for (const key of NOT_PRINTED.keys()) {
+    if (key.endsWith(".*") && path.startsWith(key.slice(0, -1))) return true;
+  }
+  return false;
+}
+
+/**
+ * Every field path the data actually has, collected once at load rather than as a
+ * side effect of the coverage test below.
+ *
+ * This started out as a Set the coverage test filled in as it walked, which made
+ * the stale-exemption test pass only when it ran second — invisible under `npm
+ * test` and a false failure the moment sabotage ran that test on its own. A test
+ * whose result depends on another test having run is not a check.
+ */
+const DATA_PATHS = new Set(
+  ALL_TOPICS.flatMap((t) =>
+    (t.sections ?? []).flatMap((s) => [...leafStrings(s)].map(([path]) => path)),
+  ),
+);
+
+/** Contrast ratio, so the palette claims are recomputed rather than trusted. */
+function contrast(a, b) {
+  const lum = (hex) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const [r, g, bl] = c.map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+describe("static reference pages", () => {
+  it("every section kind in the data has a renderer, and no renderer is dead", () => {
+    const inData = [...new Set(ALL_TOPICS.flatMap((t) => (t.sections ?? []).map((s) => s.kind)))].sort();
+    // Both directions on purpose. A kind with no renderer throws the build; a
+    // renderer with no kind is dead code that will rot untested, and the only
+    // moment anyone would notice is now.
+    assert.deepEqual(
+      inData.filter((k) => !RENDERABLE_KINDS.includes(k)),
+      [],
+      "these section kinds exist in the data with no renderer in tools/prerender.mjs",
+    );
+    assert.deepEqual(
+      RENDERABLE_KINDS.filter((k) => !inData.includes(k)),
+      [],
+      "these renderers in tools/prerender.mjs are no longer used by any section",
+    );
+  });
+
+  it("an unknown section kind throws, naming the section and the file to fix", () => {
+    // The failure mode this prevents: a renderer keyed off an object lookup that
+    // returns undefined, `?? ""`-ed into a page that then indexes as thin
+    // content. A build failure is the only outcome that gets noticed.
+    assert.throws(
+      () => renderSection({ id: "x", heading: "X", kind: "sparklines", rows: [] }, { prefix: "" }),
+      (err) => {
+        assert.match(err.message, /sparklines/);
+        assert.match(err.message, /"x"/);
+        assert.match(err.message, /prerender\.mjs/);
+        return true;
+      },
+    );
+  });
+
+  it("emits one page per topic, plus the hub and the sitemap", () => {
+    assert.deepEqual(
+      RENDERED.map((p) => p.fileName),
+      [
+        "knowledge/index.html",
+        ...ALL_TOPICS.map((t) => pagePathFor(t.id)),
+        "sitemap.xml",
+      ],
+      "the emitted set drifted from the topic registry",
+    );
+    assert.equal(new Set(RENDERED.map((p) => p.fileName)).size, RENDERED.length, "duplicate fileName");
+  });
+
+  it("every string in the data reaches the page it belongs to", () => {
+    const dropped = [];
+    for (const topic of ALL_TOPICS) {
+      const text = visibleText(PAGE_BY_NAME.get(pagePathFor(topic.id)));
+      for (const section of topic.sections ?? []) {
+        for (const [path, raw] of leafStrings(section)) {
+          const value = raw.replace(/\s+/g, " ").trim();
+          if (!value || isExempt(path)) continue;
+          if (!text.includes(value)) {
+            dropped.push(`${topic.id}#${section.id} (${section.kind}) ${path}: ${JSON.stringify(value.slice(0, 60))}`);
+          }
+        }
+      }
+    }
+    assert.deepEqual(
+      dropped,
+      [],
+      "the static page does not say what the app says — either fix the renderer or add a named exemption to NOT_PRINTED",
+    );
+  });
+
+  it("no exemption in NOT_PRINTED is stale", () => {
+    // Without this, a data refactor that renames `rows[].url` leaves an
+    // exemption matching nothing, and the next field to go missing is covered by
+    // an entry that was written about something else entirely.
+    const matches = (key) =>
+      key.endsWith(".*")
+        ? [...DATA_PATHS].some((p) => p.startsWith(key.slice(0, -1)))
+        : DATA_PATHS.has(key);
+    assert.deepEqual(
+      [...NOT_PRINTED.keys()].filter((k) => !matches(k)),
+      [],
+      "these exemptions no longer match any field — delete them",
+    );
+  });
+
+  it("every id exempted as \"resolved by a lookup\" actually resolved on the page", () => {
+    // The exemptions above are the load-bearing part of the coverage test, and
+    // half of them say some variant of "not printed, because it is resolved to
+    // something that IS printed". That claim needs proving: an exemption for
+    // `systems[]` whose renderer silently emitted nothing would read as covered
+    // and be the largest hole in the file.
+    for (const topic of ALL_TOPICS) {
+      const page = visibleText(PAGE_BY_NAME.get(pagePathFor(topic.id)));
+      for (const section of topic.sections ?? []) {
+        const rows = Array.isArray(section.rows) ? section.rows : [];
+
+        const systemIds = [...new Set([...(section.systems ?? []), ...rows.flatMap((r) => r?.systems ?? [])])];
+        for (const sys of systemsFor(systemIds)) {
+          assert.ok(
+            page.includes(sys.name),
+            `${topic.id}#${section.id} cites the ${sys.id} system and the page never names it`,
+          );
+        }
+
+        const refIds = [...new Set([...(section.refs ?? []), ...rows.flatMap((r) => r?.refs ?? [])])];
+        for (const d of directivesFor(refIds)) {
+          assert.ok(
+            page.includes(display(d)),
+            `${topic.id}#${section.id} cites ${d.id} and the page never names it`,
+          );
+        }
+
+        for (const d of rows.filter((r) => r?.library)) {
+          assert.ok(
+            page.includes(libraryName(d)),
+            `${topic.id}#${section.id}: ${d.id} says where to find it and the page does not`,
+          );
+        }
+      }
+    }
+  });
+
+  it("the warrant note is withheld exactly where the app withholds it", () => {
+    // TopicSection.vue renders warrantNote only when the service has no warrant
+    // tier: `v-if="!rows.warrant?.length && rows.warrantNote"`. The Coast Guard
+    // has W-2 through W-4 AND a note explaining the missing W-1/W-5, so a
+    // renderer that just prints the note whenever it exists diverges on exactly
+    // one of six services — the kind of gap nobody finds by looking.
+    const page = visibleText(PAGE_BY_NAME.get(pagePathFor("ranks")));
+    const withNote = TOPIC_BY_ID.get("ranks").sections.filter((s) => s.rows?.warrantNote);
+    assert.ok(withNote.length >= 3, "no service carries a warrantNote — this test stopped testing anything");
+    for (const s of withNote) {
+      const hasWarrantTier = Boolean(s.rows.warrant?.length);
+      assert.equal(
+        page.includes(s.rows.warrantNote),
+        !hasWarrantTier,
+        `${s.id}: warrantNote should be ${hasWarrantTier ? "withheld (the service HAS warrant grades)" : "printed"}`,
+      );
+    }
+  });
+
+  it("nothing renders as undefined, NaN, or [object Object]", () => {
+    for (const { fileName, source } of HTML_PAGES) {
+      for (const tell of ["undefined", "NaN", "[object Object]", "null"]) {
+        assert.ok(
+          !visibleText(source).includes(tell),
+          `${fileName} prints "${tell}" — a field the renderer read that the data does not have`,
+        );
+      }
+    }
+  });
+
+  it("every ampersand in the markup is a real entity", () => {
+    // "Awards & Precedence" reaching the markup as a bare `&` is the single most
+    // likely escaping defect here, and it is invisible in a browser.
+    //
+    // Script content is excluded because the rule inverts there — see the next
+    // test. Getting THAT backwards is the more interesting mistake, so it is
+    // asserted rather than left to this exclusion to imply.
+    for (const { fileName, source } of RENDERED) {
+      const markup = source.replace(/<script[\s\S]*?<\/script>/g, "");
+      const bad = markup.match(/&(?!(?:[a-zA-Z][a-zA-Z0-9]{1,8}|#\d{1,6}|#x[0-9a-fA-F]{1,6});)/g);
+      assert.equal(bad, null, `${fileName} contains a raw & outside an entity`);
+    }
+  });
+
+  it("the JSON-LD is NOT entity-escaped, and cannot break out of its script", () => {
+    // A `<script>` element's content is raw text, not markup. Escaping the JSON
+    // means Google reads the literal characters "&amp;" as part of the name —
+    // which is exactly the fix someone would apply after reading the test above.
+    //
+    // The other side of raw text: the only sequence that ends the element is
+    // `</script`, so a `</` anywhere in the payload is the one real injection
+    // route. The data is ours, which is why nobody would think to check.
+    for (const { fileName, source } of HTML_PAGES) {
+      const payload = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(source)[1];
+      assert.doesNotMatch(payload, /&(?:amp|lt|gt|quot|#\d+);/, `${fileName} has entity-escaped JSON-LD`);
+      assert.doesNotMatch(payload, /<\//, `${fileName} JSON-LD can terminate its own script element`);
+      // And the escaping really is being exercised: at least one page must carry
+      // a character the markup has to escape, or this test is vacuous.
+      JSON.parse(payload);
+    }
+    const escaped = HTML_PAGES.filter(({ source }) => source.includes("&amp;"));
+    assert.ok(escaped.length >= 3, "no page contains an escaped & any more — reread both of these tests");
+  });
+
+  it("one h1 per page, and headings never skip a level", () => {
+    for (const { fileName, source } of HTML_PAGES) {
+      const levels = [...source.matchAll(/<h([1-6])\b/g)].map((m) => Number(m[1]));
+      assert.equal(levels.filter((l) => l === 1).length, 1, `${fileName} does not have exactly one <h1>`);
+      assert.equal(levels[0], 1, `${fileName} opens with an h${levels[0]}`);
+      for (let i = 1; i < levels.length; i++) {
+        assert.ok(
+          levels[i] <= levels[i - 1] + 1,
+          `${fileName} jumps from h${levels[i - 1]} to h${levels[i]}`,
+        );
+      }
+    }
+  });
+
+  it("canonical, og:url, and the JSON-LD @id all name one origin and one URL", () => {
+    // Five specs, five absolute URLs, no way to deduplicate them. A canonical
+    // pointing at the wrong URL is the most expensive mistake available here: it
+    // explicitly instructs Google to index something else instead.
+    let seen = 0;
+    for (const { fileName, source } of HTML_PAGES) {
+      const expected = canonicalFor(fileName);
+      const canonical = /<link rel="canonical" href="([^"]+)"/.exec(source);
+      const ogUrl = /<meta property="og:url" content="([^"]+)"/.exec(source);
+      assert.ok(canonical && ogUrl, `${fileName} is missing a canonical or an og:url`);
+      assert.equal(canonical[1], expected, `${fileName} canonical`);
+      assert.equal(ogUrl[1], expected, `${fileName} og:url`);
+
+      const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(source)[1]);
+      const nodes = ld["@graph"] ?? [ld];
+      assert.equal(nodes[0]["@id"], expected, `${fileName} JSON-LD @id`);
+      assert.equal(nodes[0].url, expected, `${fileName} JSON-LD url`);
+      assert.equal(nodes[0].dateModified, LASTMOD, `${fileName} JSON-LD dateModified`);
+
+      for (const url of source.match(/https?:\/\/[^"'\s<)]*pollywog[^"'\s<)]*/g) ?? []) {
+        assert.ok(url.startsWith(ORIGIN), `${fileName} references ${url}, which is not ${ORIGIN}`);
+        seen++;
+      }
+    }
+    // Rot guard, in the shape the sibling homepage uses: a rename that made the
+    // pattern match nothing would otherwise make this test pass by finding zero.
+    assert.ok(seen > 40, `only ${seen} absolute URLs found — the pattern has stopped matching`);
+  });
+
+  it("relative prefixes match the depth of the page they sit on", () => {
+    // These pages are two directories deep and the app's base is `./`, so every
+    // path is relative and the count of `../` is load-bearing. Get it wrong and
+    // the page still renders — with a broken favicon, missing insignia sprites,
+    // and a sibling nav that 404s.
+    for (const { fileName, source } of HTML_PAGES) {
+      const prefix = prefixFor(fileName);
+      assert.equal(prefix, "../".repeat(fileName.split("/").length - 1), `${fileName} prefix`);
+      const refs = [
+        ...[...source.matchAll(/(?:href|src)="([^"]+)"/g)].map((m) => m[1]),
+        ...[...source.matchAll(/url\(([^)]+)\)/g)].map((m) => m[1]),
+      ];
+      for (const ref of refs) {
+        if (/^(?:https?:|tel:|mailto:|data:|#)/.test(ref)) continue;
+        assert.ok(ref.startsWith(prefix), `${fileName} references "${ref}", which is not relative to its own depth`);
+        assert.ok(
+          !ref.slice(prefix.length).includes("../"),
+          `${fileName} references "${ref}" — a stray ../ past the site root`,
+        );
+      }
+      // Both insigniaStyle and spriteStyle return url(./img/…), which resolves
+      // against the DOCUMENT, so leaving one unrewritten means every sprite on a
+      // nested page 404s while the page itself looks fine.
+      assert.ok(!/url\(\.\//.test(source), `${fileName} has an unrewritten url(./ …) — see styleAttr()`);
+    }
+  });
+
+  it("every local reference resolves to something that exists", () => {
+    const generated = new Set(RENDERED.map((p) => p.fileName));
+    for (const { fileName, source } of HTML_PAGES) {
+      const prefix = prefixFor(fileName);
+      const ids = new Set([...source.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+      const refs = [
+        ...[...source.matchAll(/(?:href|src)="([^"]+)"/g)].map((m) => m[1]),
+        ...[...source.matchAll(/url\(([^)]+)\)/g)].map((m) => m[1]),
+      ];
+      for (const ref of refs) {
+        if (/^(?:tel:|mailto:)/.test(ref)) continue;
+        if (/^https?:/.test(ref)) {
+          assert.ok(ref.startsWith("https://"), `${fileName} links ${ref} over plain http`);
+          continue;
+        }
+        if (ref.startsWith("#")) {
+          assert.ok(ids.has(ref.slice(1)), `${fileName} links ${ref}, and no element has that id`);
+          continue;
+        }
+        let rest = ref.slice(prefix.length).split("#")[0].split("?")[0];
+        if (rest === "") continue; // the app root — index.html, emitted by vite
+        if (rest.endsWith("/")) rest += "index.html";
+        assert.ok(
+          generated.has(rest) || existsSync(join(ROOT, "public", rest)),
+          `${fileName} references "${ref}" — neither generated nor present in public/`,
+        );
+      }
+    }
+  });
+
+  it("the only script on these pages is structured data", () => {
+    // The whole point of a static copy is that it paints from one request with no
+    // JS. Something "harmless" added here also means the page can now break.
+    for (const { fileName, source } of HTML_PAGES) {
+      for (const tag of source.match(/<script[^>]*>/g) ?? []) {
+        assert.equal(tag, '<script type="application/ld+json">', `${fileName} carries ${tag}`);
+      }
+      assert.ok(!/\son[a-z]+="/.test(source), `${fileName} has an inline event handler`);
+    }
+  });
+
+  it("the breadcrumb is ordered and every JSON-LD @id is unique", () => {
+    for (const { fileName, source } of HTML_PAGES) {
+      const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(source)[1]);
+      const nodes = ld["@graph"] ?? [ld];
+      const ids = nodes.map((n) => n["@id"]).filter(Boolean);
+      assert.equal(new Set(ids).size, ids.length, `${fileName} repeats an @id`);
+      const crumbs = nodes.find((n) => n["@type"] === "BreadcrumbList");
+      if (!crumbs) continue;
+      const positions = crumbs.itemListElement.map((i) => i.position);
+      assert.deepEqual(positions, [1, 2, 3], `${fileName} breadcrumb positions`);
+      // The last crumb carries no `item` — it is the page you are already on, and
+      // giving it a self-link is how a breadcrumb trail ends up with a loop.
+      assert.equal(crumbs.itemListElement.at(-1).item, undefined, `${fileName} last crumb self-links`);
+    }
+  });
+
+  it("the hub reaches every card and every card reaches the hub", () => {
+    // This is the entire crawl path. The app's own nav is rendered by JavaScript,
+    // so a crawler arriving at the origin root gets into this content through
+    // knowledge/ and nowhere else.
+    const hub = PAGE_BY_NAME.get("knowledge/index.html");
+    for (const topic of ALL_TOPICS) {
+      const href = `${prefixFor("knowledge/index.html")}${pagePathFor(topic.id).replace(/index\.html$/, "")}`;
+      assert.ok(hub.includes(`href="${href}"`), `the hub does not link ${topic.id} (expected ${href})`);
+      const page = PAGE_BY_NAME.get(pagePathFor(topic.id));
+      assert.ok(
+        page.includes(`href="${prefixFor(pagePathFor(topic.id))}knowledge/"`),
+        `${topic.id} does not link back to the hub`,
+      );
+    }
+  });
+
+  it("every page carries the disclaimer and offers the interactive version", () => {
+    for (const { fileName, source } of HTML_PAGES) {
+      const text = visibleText(source);
+      assert.match(text, /Unofficial\./, `${fileName} does not say it is unofficial`);
+      assert.match(text, /not a system of record|Nothing here is a system of record/i, `${fileName}`);
+      assert.match(text, /1-833-330-MNCC/, `${fileName} does not offer MNCC`);
+    }
+    for (const topic of ALL_TOPICS) {
+      const page = PAGE_BY_NAME.get(pagePathFor(topic.id));
+      const href = `${prefixFor(pagePathFor(topic.id))}${hashRouteFor(topic.id)}`;
+      assert.ok(page.includes(`href="${href}"`), `${topic.id} does not link its own route (expected ${href})`);
+    }
+  });
+
+  it("the hash route each page advertises is a route the router has", () => {
+    // A static page whose "Open the interactive version" button lands on the
+    // catch-all redirect is worse than no button: it looks like the app lost the
+    // page the crawler just indexed.
+    const router = readFileSync(join(ROOT, "src/router.js"), "utf8");
+    assert.match(router, /path: "\/knowledge"/, "the /knowledge index route the hub advertises is gone");
+    assert.ok(
+      PAGE_BY_NAME.get("knowledge/index.html").includes(
+        `href="${prefixFor("knowledge/index.html")}#/knowledge"`,
+      ),
+      "the hub does not offer the interactive version of itself",
+    );
+    for (const topic of ALL_TOPICS) {
+      const route = hashRouteFor(topic.id).slice(1);
+      if (route.startsWith("/knowledge/")) {
+        assert.match(router, /path: "\/knowledge\/:topicId"/, "the /knowledge/:topicId route is gone");
+        assert.ok(TOPIC_BY_ID.get(topic.id), `${topic.id} is not in the registry the route resolves against`);
+      } else {
+        assert.ok(
+          router.includes(`path: "${route}"`),
+          `${topic.id} advertises ${route}, which the router does not declare`,
+        );
+      }
+    }
+  });
+
+  it("titles and descriptions are written to survive a result list", () => {
+    for (const { fileName, source } of HTML_PAGES) {
+      const title = /<title>([^<]*)<\/title>/.exec(source)[1];
+      const desc = /name="description" content="([^"]*)"/.exec(source)[1];
+      assert.ok(title.length >= 20 && title.length <= 65, `${fileName} title is ${title.length} chars`);
+      assert.match(title, / — SALTDOG$/, `${fileName} title does not end with the brand`);
+      assert.ok(desc.length >= 60 && desc.length <= 165, `${fileName} description is ${desc.length} chars`);
+      assert.match(
+        source,
+        /<meta name="robots" content="index, follow/,
+        `${fileName} is not asking to be indexed — which is the whole point of the file`,
+      );
+    }
+  });
+
+  it("the static stylesheet's palette still matches the Vuetify themes", () => {
+    // The app's theme is CSS-in-JS and these pages are hand-written CSS. The only
+    // place the two are ever seen together is a user following a search result
+    // into the app, which is the least likely place to notice they have drifted.
+    const src = readFileSync(join(ROOT, "tools/prerender.mjs"), "utf8");
+    const style = src.slice(src.indexOf("const STYLE"), src.indexOf("const DISCLAIMER"));
+    const theme = readFileSync(join(ROOT, "src/plugins/vuetify.js"), "utf8");
+    const tokensOf = (name) => {
+      const body = new RegExp(`const ${name} = \\{[\\s\\S]*?\\n\\};`).exec(theme);
+      assert.ok(body, `${name} is no longer an object literal in vuetify.js — reread this test`);
+      return Object.fromEntries(
+        [...body[0].matchAll(/"?([\w-]+)"?:\s*"(#[0-9A-Fa-f]{6})"/g)].map((m) => [m[1], m[2].toUpperCase()]),
+      );
+    };
+    const dark = tokensOf("saltDark");
+    const light = tokensOf("saltLight");
+    const blocks = style.split("prefers-color-scheme: light");
+    const varOf = (block, name) => {
+      const m = new RegExp(`--${name}:\\s*(#[0-9A-Fa-f]{6})`).exec(block);
+      assert.ok(m, `--${name} is missing from the stylesheet`);
+      return m[1].toUpperCase();
+    };
+    for (const [scheme, block, tokens, goldToken] of [
+      ["dark", blocks[0], dark, "primary"],
+      ["light", blocks[1], light, "secondary"],
+    ]) {
+      assert.equal(varOf(block, "bg"), tokens.background, `${scheme} --bg`);
+      assert.equal(varOf(block, "surface"), tokens.surface, `${scheme} --surface`);
+      assert.equal(varOf(block, "line"), tokens["border-color"], `${scheme} --line`);
+      assert.equal(varOf(block, "text"), tokens["on-background"], `${scheme} --text`);
+      assert.equal(varOf(block, "dim"), tokens["on-surface-variant"], `${scheme} --dim`);
+      assert.equal(varOf(block, "gold"), tokens[goldToken], `${scheme} --gold`);
+
+      // Recomputed rather than trusted. The bright gold #C8A951 is 2.27:1 on
+      // white, which is exactly how a navy-and-gold theme goes non-compliant, and
+      // "just use the same gold in both themes" is the obvious simplification
+      // that would break the light one.
+      const gold = varOf(block, "gold");
+      const bg = varOf(block, "bg");
+      const onGold = varOf(block, "on-gold");
+      assert.ok(contrast(gold, bg) >= 4.5, `${scheme}: gold ${gold} on ${bg} is ${contrast(gold, bg).toFixed(2)}:1`);
+      assert.ok(
+        contrast(onGold, gold) >= 4.5,
+        `${scheme}: button label ${onGold} on ${gold} is ${contrast(onGold, gold).toFixed(2)}:1`,
+      );
+      assert.ok(contrast(varOf(block, "dim"), bg) >= 4.5, `${scheme}: dim text fails on the background`);
+    }
+    assert.notEqual(varOf(blocks[0], "gold"), varOf(blocks[1], "gold"), "both themes now share one gold");
+  });
+
+  it("the sitemap lists exactly the pages emitted, and nothing outside /saltdog/", () => {
+    const xml = PAGE_BY_NAME.get("sitemap.xml");
+    const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    assert.deepEqual(
+      locs,
+      [
+        `${ORIGIN}${BASE_PATH}`,
+        `${ORIGIN}${BASE_PATH}knowledge/`,
+        ...ALL_TOPICS.map((t) => canonicalFor(pagePathFor(t.id))),
+      ],
+      "the sitemap drifted from the emitted pages",
+    );
+    // A sitemap may only list URLs at or below its own path; one that reaches
+    // outside is ignored for those URLs, silently.
+    for (const loc of locs) {
+      assert.ok(loc.startsWith(`${ORIGIN}${BASE_PATH}`), `${loc} is outside the sitemap's own path`);
+    }
+    assert.equal(new Set(locs).size, locs.length, "the sitemap repeats a URL");
+    for (const mod of [...xml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1])) {
+      assert.equal(mod, LASTMOD, "lastmod is not the date it was built with");
+    }
+    assert.ok(!/<changefreq>|<priority>/.test(xml), "changefreq and priority are ignored by Google");
+  });
+
+  it("renderAll refuses a lastmod it cannot vouch for", () => {
+    // Google reads <lastmod> only while it stays honest. A build that silently
+    // wrote "undefined" or a US-format date into every entry would teach it to
+    // stop reading this file at all.
+    for (const bad of [undefined, null, "", "2026-1-1", "01/01/2026", "2026-01-01T00:00:00Z", "today"]) {
+      assert.throws(() => renderAll({ lastmod: bad }), /lastmod must be YYYY-MM-DD/, `accepted ${bad}`);
+    }
+    assert.doesNotThrow(() => renderAll({ lastmod: "2026-01-01" }));
+  });
+
+  it("the pages are declared to the sibling homepage's crawl entry points", () => {
+    // The reference pages exist to be found, and nothing at the origin root
+    // points at them unless these two lines are there. Both live in homepage/,
+    // which deploys from a different repository — so the coupling is exactly the
+    // kind that rots without a test naming it.
+    const hp = join(ROOT, "homepage");
+    if (!existsSync(hp)) return;
+    const robots = readFileSync(join(hp, "robots.txt"), "utf8");
+    assert.ok(
+      robots.includes(`Sitemap: ${ORIGIN}${BASE_PATH}sitemap.xml`),
+      "homepage/robots.txt does not name the app's own sitemap",
+    );
+    // Relative, not absolute: every path in homepage/index.html is relative by
+    // that folder's own rule, and its check.mjs enforces it. So the link a
+    // crawler follows is `saltdog/knowledge/` from the origin root.
+    const index = readFileSync(join(hp, "index.html"), "utf8");
+    const relative = `${BASE_PATH.slice(1)}knowledge/`; // "/saltdog/" -> "saltdog/knowledge/"
+    assert.ok(
+      index.includes(`href="${relative}"`),
+      `homepage/index.html does not link ${relative}, so nothing at the origin root reaches these pages`,
+    );
   });
 });
