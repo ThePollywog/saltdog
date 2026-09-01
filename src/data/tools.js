@@ -56,9 +56,12 @@ export const TOOLS = [
     icon: mdiAlphabeticalVariant,
   },
   {
+    // The id stays "ribbons" through the rename. It is in the route, in the
+    // saved-rack storage key and in two topics' `home` — display text is not
+    // identity, which is the same rule the award and checklist ids follow.
     id: "ribbons",
-    title: "Ribbon Rack",
-    navTitle: "Ribbon Rack Calculator",
+    title: "Uniform",
+    navTitle: "Uniform Information",
     icon: mdiMedalOutline,
   },
   {

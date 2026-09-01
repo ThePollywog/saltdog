@@ -21,7 +21,7 @@
  * WHAT IS AND IS NOT DUPLICATED. The data is not: every fact comes from
  * `src/data/*.js` through `PAGE_TOPICS` — every topic with a page of its own,
  * which is deliberately not every topic the search corpus indexes: awards is
- * rendered by the ribbon rack calculator and has no page to mirror. The
+ * rendered by the Uniform Information tool and has no page to mirror. The
  * PRESENTATION is — these renderers are
  * a second implementation of what TopicSection.vue does, because a Vue template
  * cannot run in Node without dragging Vuetify through SSR, and because a static

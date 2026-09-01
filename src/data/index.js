@@ -23,6 +23,7 @@ import fleets from "./fleets.js";
 import jointCodes from "./jointCodes.js";
 import phonetic from "./phonetic.js";
 import awards from "./awards.js";
+import uniform from "./uniform.js";
 import doctrine from "./doctrine.js";
 import directives from "./directives.js";
 
@@ -60,12 +61,14 @@ export const QUICKLINKS_TOPIC = quicklinks;
  * all things you want in front of you WHILE building a rack, not on a separate
  * page you have to hold in your head. The calculator renders every one of its
  * sections, so a knowledge page would have been the same material at a second
- * URL — which is the duplication, not a second audience.
+ * URL — which is the duplication, not a second audience. Uniform is here for the
+ * same reason and lands on the same tool: what governs a warfare device is the
+ * same question as what governs a ribbon, asked one tab over.
  *
  * They are indexed and citable exactly like a knowledge topic; the only
  * difference is `home`, which sends every route and citation to the tool.
  */
-export const TOOL_TOPICS = [awards];
+export const TOOL_TOPICS = [awards, uniform];
 
 /**
  * Topics that get a page of their own — the nav, the knowledge index, and the

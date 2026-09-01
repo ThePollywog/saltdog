@@ -393,7 +393,7 @@ const GROUP_LABEL = new Map(GROUPS.map((g) => [g.id, g.label]));
  * The awards topic, which has NO knowledge page of its own.
  *
  * Everything here — precedence, wear rules, device legend — is rendered by the
- * ribbon rack calculator, so `home` points at the tool instead of at
+ * Uniform Information tool, so `home` points at the tool instead of at
  * `/knowledge/awards`. The topic still exists because the search corpus is
  * built from topics, and the chat answer card renders these `section` objects
  * directly: the calculator and a cited answer stay identical by construction,
@@ -409,7 +409,7 @@ export default {
   title: "Navy Awards & Precedence",
   eyebrow: "Awards",
   home: { name: "tools", params: { tool: "ribbons" } },
-  homeLabel: "the Ribbon Rack Calculator",
+  homeLabel: "Uniform Information",
   blurb:
     "All 68 Navy ribbons in order of precedence, with the devices that go on them.",
   sourcePdf: "usn-ribbons.pdf",

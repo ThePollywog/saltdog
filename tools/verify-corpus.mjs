@@ -64,6 +64,8 @@ import {
   renderAll,
   renderSection,
 } from "./prerender.mjs";
+import uniformTopic, { PLACEMENT } from "../src/data/uniform.js";
+import { DEFAULT_TAB, TABS, tabFor } from "../src/lib/uniformTabs.js";
 import awardsTopic, {
   AWARDS,
   AWARD_BY_ID,
@@ -195,6 +197,19 @@ const GOLDEN = [
   ["silver star in lieu of five", ["awards#devices", "awards#precedence"]],
   ["where does the combat action ribbon go", ["awards#precedence", "awards#wear"]],
   ["armed forces reserve medal", ["awards#precedence", "awards#devices"]],
+
+  // --- uniform insignia ---------------------------------------------------
+  // The measurements are deliberately not on this site, so the job of these is
+  // to prove the locator is reachable by the words someone would actually type
+  // when hunting for one. "unknown" would be a worse answer than "here is the
+  // chapter": the question has an address even when the number does not.
+  ["where do warfare devices go on the uniform", ["uniform#placement", "uniform#measurements"]],
+  ["which chapter covers rating badges", ["uniform#placement"]],
+  ["nametag placement", ["uniform#placement"]],
+  ["service stripes", ["uniform#placement"]],
+  ["cap device", ["uniform#placement"]],
+  ["how many inches above the pocket", ["uniform#measurements", "uniform#placement", "awards#wear"]],
+  ["uniform insignia measurements", ["uniform#measurements", "uniform#placement"]],
 
   // --- portals ------------------------------------------------------------
   ["MyNavy HR portal", ["quicklinks#portals", "quicklinks#personnel"]],
@@ -2156,13 +2171,16 @@ describe("awards and ribbon racks", () => {
  * Where a topic lives.
  *
  * Most topics are rendered by /knowledge/:id. Two are not — quick links has its
- * own view, and awards is rendered entirely by the ribbon rack calculator — and
+ * own view, and awards is rendered entirely by the Uniform Information tool — and
  * they declare that with `home`. The split matters in three places that cannot
  * see each other: the router, the search corpus (a citation has to open the
  * page that actually renders the section), and tools/prerender.mjs (a static
  * page for a topic the app never serves at that URL is a page nobody can reach
  * from the app it mirrors).
  */
+/** The topics the Uniform Information tool renders. */
+const HOSTED = [awardsTopic, uniformTopic];
+
 describe("topic homes", () => {
   it("the three topic lists partition cleanly", () => {
     const ids = ALL_TOPICS.map((t) => t.id);
@@ -2223,7 +2241,8 @@ describe("topic homes", () => {
   it("the answer card's destination label is never invented", () => {
     assert.equal(topicHomeLabel("ranks"), "Knowledge");
     assert.equal(topicHomeLabel("quicklinks"), "Quick Links");
-    assert.equal(topicHomeLabel("awards"), "the Ribbon Rack Calculator");
+    assert.equal(topicHomeLabel("awards"), "Uniform Information");
+    assert.equal(topicHomeLabel("uniform"), "Uniform Information");
     for (const rec of buildCorpus().records) {
       assert.ok(rec.homeLabel, `${rec.id} has no homeLabel`);
     }
@@ -2259,24 +2278,116 @@ describe("topic homes", () => {
    * page building clean with a block silently missing, and the browser smoke
    * check that would catch it needs Chrome — so the cheap half runs here.
    */
-  it("the ribbon rack calculator renders every awards section", () => {
+  it("both hosted topics are registered, or their content is unsearchable", () => {
+    // The tool imports these modules directly, so it renders them whether or not
+    // the registry knows about them — which is exactly how a topic ends up
+    // visible on the page and absent from search, with nothing to notice.
+    for (const t of HOSTED) {
+      assert.ok(
+        TOOL_TOPICS.includes(t),
+        `${t.id} is rendered by the uniform tool but is not in TOOL_TOPICS`,
+      );
+    }
+  });
+
+  it("the uniform locator cites the publication it is a locator for", () => {
+    // Every section of this topic exists to hand over to NAVPERS 15665. One
+    // that doesn't cite it is a page telling you to go and read something
+    // without saying what.
+    for (const section of uniformTopic.sections) {
+      assert.ok(
+        (section.refs ?? []).includes("navpers-15665"),
+        `uniform#${section.id} does not cite NAVPERS 15665`,
+      );
+    }
+  });
+
+  it("the locator covers both insignia chapters, and no measurement leaks in", () => {
+    assert.deepEqual(
+      PLACEMENT.map((x) => x.where),
+      [
+        "Chapter 4, Section 1",
+        "Chapter 4, Section 2",
+        "Chapter 4, Section 3",
+        "Chapter 5, Section 1",
+        "Chapter 5, Section 2",
+        "Chapter 5, Section 3",
+        "Chapter 5, Section 4",
+      ],
+      "the locator no longer maps every section of chapters 4 and 5",
+    );
+    // The deliberate absence, asserted so it stays deliberate. A dimension
+    // transcribed from a superseded revision is the one thing this topic exists
+    // to avoid, and it would read as the most authoritative line on the page.
+    for (const [path, str] of strings([uniformTopic])) {
+      assert.doesNotMatch(
+        str,
+        /\b\d+(-\d+)?\/\d+\s*(inch|in\b)|\b\d+\s*inches\b/i,
+        `${path} states a measurement; this topic is a locator, not a transcription`,
+      );
+    }
+  });
+
+  it("the uniform tool renders every section of both topics it hosts", () => {
     const src = readFileSync(join(ROOT, "src/components/tools/RibbonRackTool.vue"), "utf8");
-    const ids = awardsTopic.sections.map((s) => s.id).sort();
+    const ids = [...awardsTopic.sections, ...uniformTopic.sections].map((s) => s.id).sort();
 
     // The ids it actually LOOKS UP, not the ids it merely mentions somewhere.
-    // Substring-matching the id passes against an anchor href or a comment,
-    // which is how a check like this ends up decorative.
+    // Substring-matching the id passes against a comment or a label, which is
+    // how a check like this ends up decorative.
     const lookedUp = [...src.matchAll(/section\("([^"]+)"\)/g)].map((m) => m[1]).sort();
     assert.deepEqual(
       lookedUp,
       ids,
-      "RibbonRackTool.vue resolves a different set of sections than data/awards.js defines",
+      "RibbonRackTool.vue resolves a different set of sections than its two topics define",
     );
+  });
 
-    // And every in-page jump target is one of them, so a renamed section cannot
-    // leave a link pointing at an anchor that no longer renders.
-    for (const [, a] of src.matchAll(/\{ a: "([^"]+)"/g)) {
-      assert.ok(ids.includes(a), `jump link points at "${a}", which is not an awards section`);
+  it("every hosted section belongs to exactly one tab", () => {
+    // A section that belongs to no tab renders nowhere while staying perfectly
+    // citable — the chat would send someone to a page that does not contain
+    // what it cited. One that belongs to two makes tabFor() depend on
+    // declaration order.
+    const owned = TABS.flatMap((t) => t.sections);
+    assert.equal(new Set(owned).size, owned.length, "a section is claimed by two tabs");
+    assert.deepEqual(
+      [...owned].sort(),
+      HOSTED.flatMap((t) => t.sections).map((s) => s.id).sort(),
+      "the tabs and the topics the tool hosts disagree about which sections exist",
+    );
+  });
+
+  it("an arriving citation selects the tab that renders it", () => {
+    // The whole reason this is a function and not a template expression.
+    for (const tab of TABS) {
+      for (const id of tab.sections) {
+        assert.equal(tabFor({ a: id }), tab.id, `?a=${id} must open the ${tab.id} tab`);
+        // Even when the URL also carries a stale tab from wherever it was copied.
+        assert.equal(tabFor({ a: id, tab: "rack" }), tab.id, `?a=${id} must beat ?tab=rack`);
+      }
+    }
+    assert.equal(tabFor({ tab: "insignia" }), "insignia", "an explicit tab is honoured");
+    assert.equal(tabFor({}), DEFAULT_TAB);
+    assert.equal(tabFor({ tab: "nope" }), DEFAULT_TAB, "an unknown tab falls back");
+    assert.equal(tabFor({ a: "not-a-section" }), DEFAULT_TAB, "an unknown citation falls back");
+  });
+
+  it("the tool renders a TopicSection for every section it does not draw itself", () => {
+    // The template is the one part that cannot be imported and exercised here.
+    // `precedence` is drawn as the picker, so it is bound to an anchor rather
+    // than to a TopicSection; every other hosted section must be bound to one,
+    // or it is resolved, owned by a tab, and still never painted.
+    const src = readFileSync(join(ROOT, "src/components/tools/RibbonRackTool.vue"), "utf8");
+    const bound = new Set([...src.matchAll(/:section="([a-zA-Z]+)"/g)].map((m) => m[1]));
+    for (const section of HOSTED.flatMap((t) => t.sections)) {
+      if (section.id === "precedence") {
+        assert.match(src, /id="sec-precedence"/, "the picker lost its citation anchor");
+        continue;
+      }
+      assert.ok(
+        bound.has(section.id),
+        `nothing in the template renders the "${section.id}" section`,
+      );
     }
   });
 });

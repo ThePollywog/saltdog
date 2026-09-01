@@ -15,8 +15,8 @@ NOSC, or MNCC (1-833-330-MNCC).
 | **Quick Links** (`#/quick-links`) | 30 systems across 6 categories — pay, records, readiness, training, benefits, support — each marked CAC-required or open, with a filter |
 | **Every checklist item links its application** | 30 of 33 items and all 11 procedures name the system that completes them, as a button. The three that don't are conversations, not websites |
 | **Knowledge** (`#/knowledge`) | 9 topics / 56 reference sections: annual checklist, EVAL–FITREP calendar, ranks for all six services, doctrine and customs, combatant commands, Navy fleets, joint staff codes, phonetic alphabet, and the instructions behind all of it. Ranks show the real insignia; the COCOM and fleet pages carry a projected world map |
-| **Tools** (`#/tools`) | Readiness checklist, due-date planner with `.ics` export, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, ribbon rack calculator, six-service rank explorer |
-| **Reference assistant** | Offline keyword search over all 68 cards (the 56 knowledge sections, the 9 quick-links categories, and the 3 awards sections the ribbon rack tool renders), with a WebGL orb. Not an AI, no network calls |
+| **Tools** (`#/tools`) | Readiness checklist, due-date planner with `.ics` export, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, uniform information with a ribbon rack builder, six-service rank explorer |
+| **Reference assistant** | Offline keyword search over all 70 cards (the 56 knowledge sections, the 9 quick-links categories, and the 5 awards and uniform sections the Uniform tool renders), with a WebGL orb. Not an AI, no network calls |
 | **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
 | **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | The 65 sections that have a page of their own, again as 11 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
@@ -49,17 +49,17 @@ case-sensitive, so the shortcut is lowercase (`/webnavfit/` resolves there and
 ## Verification
 
 ```bash
-npm test      # 273 tests: golden questions, corpus integrity, domain rules
-npm run smoke # builds, serves, drives real Chrome over 55 checks
+npm test      # 286 tests: golden questions, corpus integrity, domain rules
+npm run smoke # builds, serves, drives real Chrome over 58 checks
 npm run verify  # both
 
-node tools/sabotage.mjs   # 91 mutations to real source; every one must be caught
+node tools/sabotage.mjs   # 101 mutations to real source; every one must be caught
 ```
 
 `npm test` is `node --test` with zero dependencies. It covers the two things
 unit-testing actually repays here:
 
-- **57 golden questions → expected record**, plus 5 negative cases that must come
+- **105 golden questions → expected record**, plus 5 negative cases that must come
   back `unknown`. The scorer is the one component where a local fix silently
   re-ranks distant answers — adding one synonym to fix one question can break
   five others, and hand-testing the query you just fixed will never show you
@@ -178,7 +178,7 @@ So `tools/prerender.mjs` emits a plain HTML file per topic at a real path
 and the source PDF.
 
 It emits from `PAGE_TOPICS`, not from everything the corpus indexes. Awards is
-rendered entirely by the ribbon rack calculator and has no page in the app, so
+rendered entirely by the Uniform Information tool and has no page in the app, so
 generating one here would publish a static URL nothing links to — a page a
 crawler can reach and a reader cannot.
 
@@ -210,7 +210,7 @@ apart.
 
 **A topic knows where it lives, and it is not always a knowledge page.** Most
 topics render at `/knowledge/:id`. Two do not: quick links has its own view, and
-awards is rendered end to end by the ribbon rack calculator. Both say so with a
+awards is rendered end to end by the Uniform Information tool. Both say so with a
 `home` field, and `topicRoute()` reads it — which is one data field instead of a
 growing chain of `if (topicId === …)` in the router, the corpus, and the answer
 card's button label.
@@ -225,6 +225,34 @@ carrying its precedence number, because a 68-row table above a 68-row checkbox
 list would have re-created the duplication inside one page. The topic stays in
 the corpus, so `awards#wear` is still citable — the citation just opens the tool,
 and the tool honours `?a=` the way a knowledge page does.
+
+**The uniform page is a locator, and says so.** Asked to add insignia
+measurements, the honest answer turned out to be that this site cannot carry
+them. The current publication is NAVPERS 15665J; it is served from MyNavy HR,
+which WAF-blocks every non-browser client, so nothing here could transcribe it
+and no build step could ever check a transcription against it. A superseded
+revision is downloadable — the January 1998 15665I is public domain and has a
+full text layer — and transcribing dimensions from it would have produced the
+most authoritative-looking and least trustworthy lines on the site. Measurements
+also vary by uniform and by sex, so a single number lifted out of context is
+wrong more often than it is right.
+
+So `src/data/uniform.js` maps the seven sections of chapters four and five to
+what each one covers, and hands over. Chapter and section, never article
+numbers: article numbering drifts fastest between revisions — the same call
+`data/directives.js` makes for the same reason — while the chapter structure is
+how the document is actually navigated. A test asserts that no string in that
+topic ever states a dimension, so the absence stays deliberate rather than
+becoming something a future edit quietly fills in.
+
+**The tool tabs are data, not markup.** `src/lib/uniformTabs.js` owns which tab
+renders which section, because that is what decides whether an arriving citation
+is rendered at all: `?a=devices` has to select the tab holding the device legend
+or the section never mounts, and the reader lands on a page that does not contain
+what was cited with nothing logged anywhere. Every hosted section must belong to
+exactly one tab — none is unrenderable-but-citable, none makes the resolver
+depend on declaration order — and an arriving `?a=` beats a `?tab=` carried along
+in the same shared URL.
 
 **The retriever admits ignorance.** Field-weighted TF-IDF, normalized by the
 query's own self-score so the threshold is corpus-size independent — and
@@ -524,7 +552,7 @@ src/
 tools/
 ├── verify-corpus.mjs   node --test suite
 ├── smoke.mjs           headless-Chrome route + interaction checks
-├── sabotage.mjs        breaks real source 91 ways, asserts the suite notices
+├── sabotage.mjs        breaks real source 101 ways, asserts the suite notices
 ├── prerender.mjs       the 11 static, crawlable reference pages + sitemap.xml
 ├── go-page.mjs         the static /go bang redirector
 ├── probe.mjs           retrieval diagnostic
@@ -570,6 +598,9 @@ before any topic declared `systems`, rendering nothing on all eight topics.
   chart was wrong. Both corrections are confirmed against
   `guides/military/ods/build_ods.py` and are asserted in the test suite, so the
   typos cannot come back unnoticed.
+- **No measurement from the Uniform Regulations appears anywhere on this site**,
+  and that is enforced by a test rather than by care. The uniform page says which
+  chapter specifies each piece of insignia and stops there.
 - The awards material is the precedence list from one chart. It is the order
   ribbons are worn in and the devices that go on them — **not** SECNAVINST 1650.1,
   and it encodes no eligibility criteria. The rack calculator arranges what you

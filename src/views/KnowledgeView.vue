@@ -33,7 +33,7 @@ watch(
 );
 
 // A topic that declares a `home` is rendered somewhere else — quick links has
-// its own view, awards is rendered by the ribbon rack calculator. Forward
+// its own view, awards is rendered by the Uniform Information tool. Forward
 // rather than render a second copy here, so a link shared before the topic
 // moved still lands on the content instead of on the index.
 watch(

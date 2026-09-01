@@ -36,10 +36,12 @@ const ROUTES = [
   ["#/knowledge/navy-fleets", "Fleet"],
   ["#/knowledge/joint-codes", "Joint"],
   ["#/knowledge/phonetic-alphabet", "Phonetic"],
-  // Awards has no knowledge page any more — the ribbon rack calculator renders
-  // the whole topic. The route stays smoked because links to it were shared
-  // before it moved, and what is asserted is that they land on the tool.
-  ["#/knowledge/awards", "Ribbon Rack Calculator"],
+  // Awards has no knowledge page any more — the uniform tool renders the whole
+  // topic, and so it does for uniform. The routes stay smoked because links to
+  // awards were shared before it moved, and what is asserted is that a
+  // /knowledge/ URL for a tool topic lands on the tool.
+  ["#/knowledge/awards", "Uniform Information"],
+  ["#/knowledge/uniform", "Uniform Information"],
   // A line of the creed, not the topic title: this is the one page whose content
   // is a `verbatim` block, and the whole risk with a new section kind is that the
   // heading renders while the rows do not. Matching on the title would pass
@@ -57,7 +59,11 @@ const ROUTES = [
   ["#/tools/points", "Good Years"],
   ["#/tools/phonetic", "Phonetic Speller"],
   ["#/tools/ranks", "Rank Explorer"],
-  ["#/tools/ribbons", "Ribbon Rack Calculator"],
+  ["#/tools/ribbons", "Uniform Information"],
+  // Each tab, because a tab that throws renders an empty panel under a working
+  // tab bar and the route check above would still pass on the header alone.
+  ["#/tools/ribbons?tab=wear", "How a rack is worn"],
+  ["#/tools/ribbons?tab=insignia", "Where each rule is specified"],
   ["#/about", "About SALTDOG"],
   ["#/knowledge/does-not-exist", "Knowledge"], // bad topic id -> index, not blank
   ["#/nonsense", "quick-reference desk"], // catch-all
@@ -860,9 +866,24 @@ async function checkRibbonReference() {
   const devices = topic.sections.find((s) => s.id === "devices");
   const precedence = topic.sections.find((s) => s.id === "precedence");
 
+  // Read across all three tabs. The material is split now, and asserting only
+  // the default tab would report the page "complete" while two thirds of it sat
+  // behind a tab that never rendered.
   const problems = await withPage(`${BASE}/#/tools/ribbons`, async (page) => {
     await page.waitFor('!!document.querySelector(\'input[type="checkbox"]\')', 8000);
-    const text = String(await page.evaluate("document.body.innerText"));
+    let text = String(await page.evaluate("document.body.innerText"));
+    for (const tab of ["wear", "insignia"]) {
+      // Hash navigation rather than a fresh load: it drives the real router the
+      // way clicking the tab does, and it keeps the console-error capture from
+      // this one page attached across all three.
+      await page.evaluate(`location.hash = "/tools/ribbons?tab=${tab}"`);
+      const painted = await page.waitFor("!!document.querySelector('.salt-section')", 8000);
+      if (!painted) {
+        page.fail(`the "${tab}" tab rendered no sections`);
+        continue;
+      }
+      text += "\n" + String(await page.evaluate("document.body.innerText"));
+    }
     // Collapse whitespace on both sides: the browser rewraps, and a rule that
     // spans a line break would otherwise look absent.
     // innerText, not textContent, so this asserts what a reader actually sees.
@@ -884,6 +905,8 @@ async function checkRibbonReference() {
     // The picker is the precedence list, so it has to BE the list: all 68, in
     // order, each showing its number. A filter bug that dropped a group would
     // otherwise just look like a shorter page.
+    await page.evaluate('location.hash = "/tools/ribbons"');
+    await page.waitFor("document.querySelectorAll('.salt-precedence').length > 0", 8000);
     const numbers = await page.evaluate(
       "JSON.stringify([...document.querySelectorAll('.salt-precedence')].map(el => el.textContent.trim()))",
     );
@@ -898,8 +921,19 @@ async function checkRibbonReference() {
     for (const row of precedence.rows) {
       if (!has(row.title)) page.fail(`award missing from the picker: ${row.title}`);
     }
+
+    // And the uniform locator, which is the whole point of the insignia tab:
+    // every subject and every chapter reference has to be on it.
+    const uniform = await import("../src/data/uniform.js");
+    for (const row of uniform.PLACEMENT) {
+      if (!has(row.subject)) page.fail(`insignia subject missing: ${row.subject}`);
+      if (!has(row.where)) page.fail(`chapter reference missing for ${row.subject}`);
+    }
+    for (const step of uniform.default.sections.find((x) => x.id === "measurements").rows) {
+      if (!has(step)) page.fail(`measurement note missing: "${String(step).slice(0, 50)}…"`);
+    }
   });
-  record("ribbon rack: the whole awards topic is on the page", problems);
+  record("uniform tool: every section of both topics is on the page", problems);
 }
 
 /**
@@ -913,7 +947,23 @@ async function checkRibbonReference() {
  */
 async function checkRibbonCitation() {
   const problems = await withPage(`${BASE}/#/tools/ribbons?a=wear`, async (page) => {
-    await page.waitFor("!!document.getElementById('sec-wear')", 8000);
+    // The cited section lives on a tab that is NOT the default. If the arriving
+    // `?a=` did not select its tab, this element never renders at all — which is
+    // the failure the tab split introduced, and it is invisible from the route
+    // check because the page header and the tab bar paint either way.
+    const rendered = await page.waitFor("!!document.getElementById('sec-wear')", 8000);
+    if (!rendered) {
+      page.fail("?a=wear did not open the tab that owns the wear rules");
+      return;
+    }
+    // Scoped to the tool's own tab bar: ToolsView renders one too, and an
+    // unscoped selector matches that one first and reports "Uniform" forever.
+    const tab = await page.evaluate(
+      "document.querySelector('.salt-subtabs .v-tab--selected')?.textContent.trim()",
+    );
+    if (tab !== "Wear & devices") {
+      page.fail(`?a=wear left the "${tab}" tab selected`);
+    }
     const focused = await page.evaluate("document.activeElement && document.activeElement.id");
     if (focused !== "sec-wear") {
       page.fail(`focus landed on "${focused}", expected the cited section sec-wear`);

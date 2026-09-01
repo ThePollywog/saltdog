@@ -1,12 +1,22 @@
 <script setup>
 /**
- * Ribbon rack calculator — pick your awards, get the rack laid out as worn.
+ * Uniform Information — the rack builder, the wear rules, and where the rest of
+ * the uniform rules are specified.
  *
  * This is the ONLY page for Navy awards. Precedence, the wear rules and the
  * device legend used to live on a knowledge page as well; they are the things
  * you want in front of you while building a rack, not on a second URL you have
  * to hold in your head, so the topic in data/awards.js declares its `home` as
- * this tool and the knowledge page is gone.
+ * this tool and the knowledge page is gone. data/uniform.js joins it for the
+ * same reason.
+ *
+ * THREE TABS, because the page had already grown past one screen: the builder
+ * alone is a 68-row picker, and stacking two reference topics under it put the
+ * insignia material four screens below anything that linked to it. The tab is
+ * in the URL as `?tab=`, not in component state — same reason ToolsView puts the
+ * tool there. A citation arriving as `?a=<section>` selects the tab that owns
+ * that section, so a chat deep link still lands on the block it cited rather
+ * than on whichever tab happened to be default.
  *
  * The reference half is rendered by <TopicSection>, the same component the
  * knowledge pages and the chat answer card use, against the same section
@@ -25,6 +35,7 @@
  * heals existing saved racks instead of leaving a wrong number baked in.
  */
 import { computed, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
   mdiCloseCircleOutline,
   mdiMagnify,
@@ -33,11 +44,13 @@ import {
   mdiUndoVariant,
 } from "@mdi/js";
 import awardsTopic, { CORRECTIONS, MULTIPLE_DEVICE } from "../../data/awards.js";
+import uniformTopic from "../../data/uniform.js";
 import {
   deviceSummary,
   layoutRack,
   spriteStyle,
 } from "../../lib/ribbons.js";
+import { TABS, tabFor } from "../../lib/uniformTabs.js";
 import { useLocalStore } from "../../composables/useLocalStore.js";
 import { useCitedSection } from "../../composables/useCitedSection.js";
 import PdfButton from "../common/PdfButton.vue";
@@ -57,16 +70,26 @@ const { state: held, reset } = useLocalStore("ribbons", {
  */
 const { cited } = useCitedSection();
 
-const section = (id) => awardsTopic.sections.find((s) => s.id === id);
+const section = (id) =>
+  [...awardsTopic.sections, ...uniformTopic.sections].find((s) => s.id === id);
 const precedence = section("precedence");
 const wear = section("wear");
 const devices = section("devices");
+const placement = section("placement");
+const measurements = section("measurements");
 
-/** Header jump links into the reference half. */
-const JUMPS = [
-  { a: "wear", label: "How a rack is worn" },
-  { a: "devices", label: "Device legend" },
-];
+const route = useRoute();
+const router = useRouter();
+
+/** Tabs and their resolution live in lib/ so they're testable without a DOM. */
+const activeTab = computed(() => tabFor(route.query));
+
+function selectTab(id) {
+  if (id === activeTab.value) return;
+  // `a` is dropped: it belongs to the tab being left, and carrying it over
+  // would re-fire the cited highlight on every tab change.
+  router.push({ name: "tools", params: { tool: "ribbons" }, query: { tab: id } });
+}
 
 const query = ref("");
 const undo = ref(null);
@@ -182,33 +205,41 @@ const rackText = computed(() => {
 <template>
   <div>
     <header class="mb-4">
-      <h2 class="salt-heading text-h5 mb-1">Ribbon Rack Calculator</h2>
+      <h2 class="salt-heading text-h5 mb-1">Uniform Information</h2>
       <p class="text-body-2 mb-3" style="max-width: 74ch; opacity: 0.85">
-        Select what you've been awarded. The rack is sorted into order of
-        precedence and laid out three to a row, built from the bottom up the way
-        it's worn — so a short row sits on top with your most senior award. All
-        68 ribbons, the wear rules and the full device legend are on this page.
+        Build a ribbon rack in order of precedence, read the rules for wearing
+        it, and find which chapter of the Uniform Regulations specifies every
+        other piece of insignia.
       </p>
-      <div class="d-flex flex-wrap align-center ga-2">
-        <PdfButton file="usn-ribbons.pdf" describes="the ribbons and devices chart" label="Original PDF" />
-        <!--
-          Jump links, because the reference half sits below a 68-row picker and
-          would otherwise be invisible to anyone who didn't scroll past it.
-
-          They go through the router as `?a=<section>` rather than as a bare
-          `href="#sec-wear"`. The app is hash-routed, so a fragment anchor would
-          overwrite the route itself and navigate to nowhere; `?a=` is the deep
-          link the router's scrollBehavior already understands, and it moves
-          focus as well as scrolling.
-        -->
-        <router-link
-          v-for="jump in JUMPS"
-          :key="jump.a"
-          :to="{ name: 'tools', params: { tool: 'ribbons' }, query: { a: jump.a } }"
-          class="salt-link text-caption"
-        >{{ jump.label }}</router-link>
-      </div>
     </header>
+
+    <!-- Nested tabs. `v-tabs` gives real tab semantics; the click pushes the
+         route so the URL stays the source of truth, exactly as ToolsView does
+         one level up. -->
+    <v-tabs
+      :model-value="activeTab"
+      density="comfortable"
+      show-arrows
+      class="mb-5 salt-subtabs"
+      style="border-bottom: 1px solid rgba(var(--v-border-color), 0.4)"
+    >
+      <v-tab v-for="t in TABS" :key="t.id" :value="t.id" @click="selectTab(t.id)">
+        {{ t.label }}
+      </v-tab>
+    </v-tabs>
+
+    <template v-if="activeTab === 'rack'">
+    <p class="text-body-2 mb-3" style="max-width: 74ch; opacity: 0.85">
+      Select what you've been awarded. The rack is sorted into order of
+      precedence and laid out three to a row, built from the bottom up the way
+      it's worn — so a short row sits on top with your most senior award.
+    </p>
+    <PdfButton
+      file="usn-ribbons.pdf"
+      describes="the ribbons and devices chart"
+      label="Original PDF"
+      class="mb-5"
+    />
 
     <!--
       Rack preview first. It's the answer to the question, and putting the
@@ -384,22 +415,48 @@ const rackText = computed(() => {
       </section>
     </v-card>
 
+    </template>
+
     <!--
-      The reference half, rendered by the same component the chat answer card
+      The reference tabs, rendered by the same component the chat answer card
       uses against the same section objects. Not retyped here: if the wear rules
       change in data/awards.js, this page and every citation to it change
       together or not at all.
     -->
-    <div class="mt-8">
+    <template v-else-if="activeTab === 'wear'">
+      <PdfButton
+        file="usn-ribbons.pdf"
+        describes="the ribbons and devices chart"
+        label="Original PDF"
+        class="mb-5"
+      />
       <TopicSection :section="wear" :level="3" :cited="cited === 'wear'" />
       <TopicSection :section="devices" :level="3" :cited="cited === 'devices'" />
-    </div>
+    </template>
 
-    <p class="text-caption mt-4 mb-0" style="opacity: 0.75; max-width: 74ch">
+    <template v-else>
+      <p class="text-body-2 mb-4" style="max-width: 74ch; opacity: 0.85">
+        {{ uniformTopic.blurb }}
+      </p>
+      <v-alert density="compact" class="mb-6">
+        <span class="text-body-2">{{ uniformTopic.note }}</span>
+      </v-alert>
+      <TopicSection :section="placement" :level="3" :cited="cited === 'placement'" />
+      <TopicSection :section="measurements" :level="3" :cited="cited === 'measurements'" />
+      <SystemLinks
+        :ids="uniformTopic.systems"
+        size="small"
+        label="Where the regulations are published"
+        class="mt-2"
+      />
+    </template>
+
+    <p class="text-caption mt-8 mb-0" style="opacity: 0.75; max-width: 74ch">
       Planning aid only. Precedence and device rules come from the Navy
       ribbons-and-devices chart, not SECNAVINST 1650.1 — this tool has no idea
       what you actually rate, and awards created after that chart was published
-      are missing. Check your record in NSIPS and your rack against the current
+      are missing. Nothing here reproduces a measurement from the Uniform
+      Regulations. Check your record in NSIPS and your rack against the current
       instruction before you mount anything.
     </p>
     <!-- NDAWS is the awards record; NSIPS is the service record. Both are named

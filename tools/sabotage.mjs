@@ -783,14 +783,14 @@ const MUTATIONS = [
 
   // --- topic homes / the awards merge -------------------------------------
   //
-  // Awards has no page of its own; the ribbon rack calculator renders the whole
+  // Awards has no page of its own; the Uniform Information tool renders the whole
   // topic. Everything below is a way for that to come apart quietly.
   {
     // Put awards back on the knowledge index and it gets a card, a route, and a
     // static page — the duplication the merge removed, re-created in one line.
     file: "src/data/index.js",
-    find: "export const TOOL_TOPICS = [awards];",
-    repl: "export const TOOL_TOPICS = [];\nTOPICS.push(awards);",
+    find: "export const TOOL_TOPICS = [awards, uniform];",
+    repl: "export const TOOL_TOPICS = [uniform];\nTOPICS.push(awards);",
     breaks: "a tool topic gets no static page and no knowledge card",
   },
   {
@@ -863,15 +863,102 @@ const MUTATIONS = [
     file: "src/components/tools/RibbonRackTool.vue",
     find: 'const devices = section("devices");',
     repl: 'const devices = section("device-legend");',
-    breaks: "renders every awards section",
+    breaks: "renders every section of both topics it hosts",
+  },
+
+  // --- the uniform tabs ----------------------------------------------------
+  //
+  // These name tests in verify-corpus, not smoke checks: sabotage runs
+  // `node --test` only, so a mutation whose `breaks` names a browser check can
+  // never be killed and would report SURVIVED forever. The tab registry lives
+  // in lib/ precisely so this logic is reachable from here.
+  {
+    // A section owned by no tab renders nowhere and stays citable — the chat
+    // sends someone to a page that does not contain what it cited.
+    file: "src/lib/uniformTabs.js",
+    find: '{ id: "insignia", label: "Insignia & placement", sections: ["placement", "measurements"] },',
+    repl: '{ id: "insignia", label: "Insignia & placement", sections: ["placement"] },',
+    breaks: "every hosted section belongs to exactly one tab",
   },
   {
-    // A jump link left pointing at an anchor nothing renders. Scrolls nowhere,
-    // logs nothing, looks like a dead click.
+    // Two tabs claiming one section makes the resolution depend on order.
+    file: "src/lib/uniformTabs.js",
+    find: '{ id: "wear", label: "Wear & devices", sections: ["wear", "devices"] },',
+    repl: '{ id: "wear", label: "Wear & devices", sections: ["wear", "devices", "placement"] },',
+    breaks: "every hosted section belongs to exactly one tab",
+  },
+  {
+    // Stop resolving the arriving citation to its tab and the cited section is
+    // never rendered. The route still 200s and the header still paints.
+    file: "src/lib/uniformTabs.js",
+    find: "  const owner = TABS.find((t) => t.sections.includes(query.a));",
+    repl: "  const owner = null;",
+    breaks: "an arriving citation selects the tab that renders it",
+  },
+  {
+    // The stale-tab case specifically: `?a=` must beat a `?tab=` copied along
+    // with it, which is exactly what a shared URL carries.
+    file: "src/lib/uniformTabs.js",
+    find: "  if (owner) return owner.id;",
+    repl: "  if (owner && !query.tab) return owner.id;",
+    breaks: "an arriving citation selects the tab that renders it",
+  },
+  {
+    // A section resolved, owned by a tab, and still never painted.
     file: "src/components/tools/RibbonRackTool.vue",
-    find: '{ a: "devices", label: "Device legend" }',
-    repl: '{ a: "device-legend", label: "Device legend" }',
-    breaks: "renders every awards section",
+    find: '      <TopicSection :section="placement" :level="3" :cited="cited === \'placement\'" />',
+    repl: "",
+    breaks: "renders a TopicSection for every section it does not draw itself",
+  },
+  {
+    // The picker loses the anchor a precedence citation lands on.
+    file: "src/components/tools/RibbonRackTool.vue",
+    find: '      id="sec-precedence"',
+    repl: '      id="sec-precedence-list"',
+    breaks: "renders a TopicSection for every section it does not draw itself",
+  },
+
+  // --- the uniform locator -------------------------------------------------
+  {
+    // The locator points at a chapter section that does not exist. Still a
+    // table, still plausible, and it sends you to the wrong part of a 400-page
+    // publication.
+    file: "src/data/uniform.js",
+    find: '    "Chapter 4, Section 3",',
+    repl: '    "Chapter 4, Section 9",',
+    breaks: "the locator covers both insignia chapters",
+  },
+  {
+    // The failure this topic exists to prevent: a dimension transcribed from a
+    // revision nobody could check, reading as the most authoritative line on
+    // the page.
+    file: "src/data/uniform.js",
+    find: '    "Command insignia, warfare and other qualification insignia, descriptions of each, nametags",',
+    repl: '    "Command insignia and warfare devices, centered 1/4 inch above the ribbons",',
+    breaks: "no measurement leaks in",
+  },
+  {
+    // Unregister the topic: rendered on the page, absent from search.
+    file: "src/data/index.js",
+    find: "export const TOOL_TOPICS = [awards, uniform];",
+    repl: "export const TOOL_TOPICS = [awards];",
+    breaks: "both hosted topics are registered",
+  },
+  {
+    // Put the series number back in the topic's keywords and the locator
+    // outranks NAVPERS 15665's own entry for its own name. Keywords carry
+    // 2.5x; a citation belongs in the body.
+    file: "src/data/uniform.js",
+    find: '  keywords: [\n    "uniform",\n    "insignia",',
+    repl: '  keywords: [\n    "uniform",\n    "navpers",\n    "15665",\n    "insignia",',
+    breaks: "a directive's own entry outranks the sections that cite it",
+  },
+  {
+    // A page telling you to go and read something without saying what.
+    file: "src/data/uniform.js",
+    find: '      refs: ["navpers-15665"],\n      heading: "Where each rule is specified",',
+    repl: '      heading: "Where each rule is specified",',
+    breaks: "cites the publication it is a locator for",
   },
 ];
 
