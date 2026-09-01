@@ -979,6 +979,66 @@ async function checkRibbonCitation() {
 }
 
 /**
+ * The footer's feedback links are real, prefilled, and carry the current page.
+ *
+ * The data test proves reportUrl() builds the right string. What it cannot see
+ * is whether the template renders it — and the specific failure here is quiet:
+ * the links are computed from `location.href` through the route, so if that
+ * computed stops re-evaluating on navigation every report on the site is filed
+ * against whichever page happened to load first. The page looks perfect either
+ * way; only the issue queue would ever show it, months later.
+ */
+async function checkFeedbackLinks() {
+  const { FOOTER_LINKS, FORMS, SITE } = await import("../src/lib/feedback.js");
+
+  const problems = await withPage(`${BASE}/#/knowledge/ranks`, async (page) => {
+    const read = async () =>
+      JSON.parse(
+        String(
+          await page.evaluate(
+            "JSON.stringify([...document.querySelectorAll('footer a')].map(a => a.href))",
+          ),
+        ),
+      );
+
+    await page.waitFor("document.querySelectorAll('footer a').length > 0", 8000);
+    const onRanks = await read();
+    if (onRanks.length !== FOOTER_LINKS.length) {
+      page.fail(`footer has ${onRanks.length} feedback links, expected ${FOOTER_LINKS.length}`);
+      return;
+    }
+
+    for (const href of onRanks) {
+      const u = new URL(href);
+      if (u.host !== "github.com") page.fail(`feedback link leaves for ${u.host}`);
+      if (!Object.values(FORMS).includes(u.searchParams.get("template"))) {
+        page.fail(`feedback link names unknown template ${u.searchParams.get("template")}`);
+      }
+      if (u.searchParams.get("site") !== SITE) page.fail("feedback link does not name the site");
+      if (!String(u.searchParams.get("where")).includes("#/knowledge/ranks")) {
+        page.fail(`feedback link reports the wrong page: ${u.searchParams.get("where")}`);
+      }
+    }
+
+    // Navigate, and the links must follow. This is the whole check.
+    await page.evaluate('location.hash = "/tools/points"');
+    const moved = await page.waitFor(
+      "[...document.querySelectorAll('footer a')].some(a => a.href.includes('tools%2Fpoints'))",
+      6000,
+    );
+    if (!moved) {
+      const after = await read();
+      page.fail(
+        `after navigating to #/tools/points the footer still reports ${
+          new URL(after[0] ?? "https://x.invalid").searchParams.get("where")
+        }`,
+      );
+    }
+  });
+  record("feedback: footer links are prefilled with the page you are on", problems);
+}
+
+/**
  * Rank insignia render as distinct artwork, on the right rank.
  *
  * The data-level tests prove the indices are a dense sequence and the sheet is
@@ -1853,6 +1913,7 @@ try {
   await checkPersistence();
   await checkTheme();
   await checkAboutStorage();
+  await checkFeedbackLinks();
   await checkRibbonReference();
   await checkRibbonCitation();
   await checkStaticPages();

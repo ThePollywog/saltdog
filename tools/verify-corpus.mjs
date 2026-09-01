@@ -66,6 +66,7 @@ import {
 } from "./prerender.mjs";
 import uniformTopic, { PLACEMENT } from "../src/data/uniform.js";
 import { DEFAULT_TAB, TABS, tabFor } from "../src/lib/uniformTabs.js";
+import { FOOTER_LINKS, FORMS, SITE, reportUrl } from "../src/lib/feedback.js";
 import awardsTopic, {
   AWARDS,
   AWARD_BY_ID,
@@ -2180,6 +2181,104 @@ describe("awards and ribbon racks", () => {
  */
 /** The topics the Uniform Information tool renders. */
 const HOSTED = [awardsTopic, uniformTopic];
+
+/**
+ * Feedback links, and the issue queue they point at.
+ *
+ * Issues for all three sites are filed against thepollywog.github.io — a
+ * different repository, which is exactly why this is checked here rather than
+ * trusted. What CAN be checked from inside this repo is that the two things
+ * this repo owns agree with each other: the footer links the app renders, and
+ * the .github/ISSUE_TEMPLATE/config.yml that redirects GitHub's own "New issue"
+ * button. Those name the same three templates on the same remote repo, and they
+ * are edited months apart.
+ *
+ * Not checked here, deliberately: whether those templates exist over there. A
+ * test that reaches into a sibling working copy passes on this machine and
+ * silently skips everywhere else, which is the shape of the homepage crawl check
+ * that was deleted for exactly that reason. The central repo validates its own
+ * templates in its own tools/check.mjs.
+ */
+describe("feedback links", () => {
+  const CONFIG = readFileSync(join(ROOT, ".github/ISSUE_TEMPLATE/config.yml"), "utf8");
+  const REPO = "https://github.com/ThePollywog/thepollywog.github.io";
+
+  it("every form the app links is one the issue chooser also offers", () => {
+    const inConfig = new Set(
+      [...CONFIG.matchAll(/[?&]template=([\w.-]+)/g)].map((m) => m[1]),
+    );
+    const inApp = new Set(Object.values(FORMS));
+    assert.ok(inApp.size > 0, "the app offers no feedback forms at all");
+    assert.deepEqual(
+      [...inApp].filter((t) => !inConfig.has(t)),
+      [],
+      "the footer links a form the issue chooser does not offer",
+    );
+    assert.deepEqual(
+      [...inConfig].filter((t) => !inApp.has(t)),
+      [],
+      "the issue chooser offers a form the app never links",
+    );
+  });
+
+  it("both routes send people to the same repository", () => {
+    for (const [, url] of CONFIG.matchAll(/url: (\S+)/g)) {
+      assert.ok(
+        url.startsWith(`${REPO}/issues`),
+        `the issue chooser links ${url}, which is not the project's issue queue`,
+      );
+    }
+    assert.ok(
+      reportUrl("correction").startsWith(`${REPO}/issues/new?`),
+      "the app's report link does not point at the project's issue queue",
+    );
+  });
+
+  it("this repository collects no issues of its own", () => {
+    // The redirect only works if the New Issue button has nothing else to
+    // offer. Turning blank issues back on quietly re-opens a second queue that
+    // nobody is watching.
+    assert.match(
+      CONFIG,
+      /^blank_issues_enabled: false$/m,
+      "blank issues are enabled here, so reports will collect in this repo instead",
+    );
+    const templates = readdirSync(join(ROOT, ".github/ISSUE_TEMPLATE")).filter(
+      (f) => f !== "config.yml",
+    );
+    assert.deepEqual(templates, [], "a template here would collect issues in this repo");
+  });
+
+  it("a report says which site and which page it came from", () => {
+    const url = new URL(reportUrl("correction", "https://example.test/saltdog/#/tools/points"));
+    assert.equal(url.searchParams.get("site"), SITE);
+    assert.equal(url.searchParams.get("template"), FORMS.correction);
+    // The hash has to survive: it is the entire route in a hash-routed app, and
+    // an unencoded `#` would truncate the parameter at GitHub's end.
+    assert.equal(
+      url.searchParams.get("where"),
+      "https://example.test/saltdog/#/tools/points",
+    );
+    assert.ok(
+      !reportUrl("correction").includes("where="),
+      "an empty where= overrides the form's placeholder with a blank",
+    );
+  });
+
+  it("an unknown form is a build-time error, not a 404 for the reporter", () => {
+    assert.throws(() => reportUrl("nope"), /unknown form/);
+  });
+
+  it("the footer offers every link it declares, and they leave the site safely", () => {
+    const src = readFileSync(join(ROOT, "src/components/shell/AppShell.vue"), "utf8");
+    assert.ok(FOOTER_LINKS.length >= 1, "the footer declares no feedback links");
+    for (const l of FOOTER_LINKS) {
+      assert.ok(FORMS[l.kind], `footer link "${l.label}" names unknown form "${l.kind}"`);
+    }
+    assert.match(src, /:href="link\.href"/, "the footer no longer renders the report links");
+    assert.match(src, /rel="noopener noreferrer"/, "an outbound link without rel=noopener");
+  });
+});
 
 describe("topic homes", () => {
   it("the three topic lists partition cleanly", () => {

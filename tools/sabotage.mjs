@@ -960,6 +960,80 @@ const MUTATIONS = [
     repl: '      heading: "Where each rule is specified",',
     breaks: "cites the publication it is a locator for",
   },
+
+  // --- feedback links ------------------------------------------------------
+  {
+    // The footer links a form the chooser does not offer — a 404 for whoever
+    // clicks it, and nothing in the app would ever notice.
+    file: "src/lib/feedback.js",
+    find: '  feature: "feature-request.yml",',
+    repl: '  feature: "feature-requests.yml",',
+    breaks: "every form the app links is one the issue chooser also offers",
+  },
+  {
+    // The other direction: a template offered by the chooser that the app never
+    // links, which is how a form quietly stops being reachable from the site.
+    file: ".github/ISSUE_TEMPLATE/config.yml",
+    find: "template=bug.yml&site=SALTDOG",
+    repl: "template=crash.yml&site=SALTDOG",
+    breaks: "every form the app links is one the issue chooser also offers",
+  },
+  {
+    // Reports collect in this repo instead of the one queue, where nobody is
+    // watching for them.
+    file: ".github/ISSUE_TEMPLATE/config.yml",
+    // Newline-anchored: the comment above the directive explains the setting by
+    // name, so a bare substring matches twice.
+    find: "\nblank_issues_enabled: false",
+    repl: "\nblank_issues_enabled: true",
+    breaks: "this repository collects no issues of its own",
+  },
+  {
+    // A redirect pointed at the wrong repository still looks like a working
+    // link on the chooser page.
+    file: ".github/ISSUE_TEMPLATE/config.yml",
+    find: "https://github.com/ThePollywog/thepollywog.github.io/issues/new?template=content-correction.yml",
+    repl: "https://github.com/ThePollywog/saltdog/issues/new?template=content-correction.yml",
+    breaks: "both routes send people to the same repository",
+  },
+  {
+    // Drop the site field and every report lands in one queue with no way to
+    // tell which of three sites it is about — the one thing centralizing costs.
+    file: "src/lib/feedback.js",
+    find: "  const q = new URLSearchParams({ template, site: SITE });",
+    repl: "  const q = new URLSearchParams({ template });",
+    breaks: "a report says which site and which page it came from",
+  },
+  {
+    // Send an empty `where` and the form's placeholder is replaced by a blank,
+    // losing the example that tells someone what to paste.
+    file: "src/lib/feedback.js",
+    find: "  if (where) q.set(\"where\", where);",
+    repl: "  q.set(\"where\", where);",
+    breaks: "a report says which site and which page it came from",
+  },
+  {
+    // An unknown form silently builds a URL to a template that does not exist.
+    file: "src/lib/feedback.js",
+    find: '  if (!template) throw new Error(`feedback: unknown form "${kind}"`);',
+    repl: "",
+    breaks: "an unknown form is a build-time error",
+  },
+  {
+    // The links stop rendering. The footer still paints its disclaimer, so the
+    // page looks entirely normal.
+    file: "src/components/shell/AppShell.vue",
+    find: '            :href="link.href"',
+    repl: '            href="#"',
+    breaks: "the footer offers every link it declares",
+  },
+  {
+    // An outbound target=_blank without rel=noopener.
+    file: "src/components/shell/AppShell.vue",
+    find: '            rel="noopener noreferrer"',
+    repl: "",
+    breaks: "the footer offers every link it declares",
+  },
 ];
 
 // --- harness ---------------------------------------------------------------

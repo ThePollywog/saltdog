@@ -19,6 +19,7 @@ NOSC, or MNCC (1-833-330-MNCC).
 | **Reference assistant** | Offline keyword search over all 70 cards (the 56 knowledge sections, the 9 quick-links categories, and the 5 awards and uniform sections the Uniform tool renders), with a WebGL orb. Not an AI, no network calls |
 | **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
+| **Report / suggest** | Footer links on every page open a prefilled issue on the project's single queue, carrying the page you were on |
 | **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | The 65 sections that have a page of their own, again as 11 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
 
 The 14 source PDFs ship in `public/pdf/` and every page links its own original,
@@ -49,11 +50,11 @@ case-sensitive, so the shortcut is lowercase (`/webnavfit/` resolves there and
 ## Verification
 
 ```bash
-npm test      # 286 tests: golden questions, corpus integrity, domain rules
-npm run smoke # builds, serves, drives real Chrome over 58 checks
+npm test      # 292 tests: golden questions, corpus integrity, domain rules
+npm run smoke # builds, serves, drives real Chrome over 59 checks
 npm run verify  # both
 
-node tools/sabotage.mjs   # 101 mutations to real source; every one must be caught
+node tools/sabotage.mjs   # 110 mutations to real source; every one must be caught
 ```
 
 `npm test` is `node --test` with zero dependencies. It covers the two things
@@ -253,6 +254,29 @@ what was cited with nothing logged anywhere. Every hosted section must belong to
 exactly one tab — none is unrenderable-but-citable, none makes the resolver
 depend on declaration order — and an arriving `?a=` beats a `?tab=` carried along
 in the same shared URL.
+
+**Issues for all three sites are filed in one queue.** SALTDOG, WEBNAVFIT and
+the homepage all report to `ThePollywog/thepollywog.github.io`; this repo's
+`.github/ISSUE_TEMPLATE/config.yml` turns blank issues off and offers only links
+there, which is GitHub's supported way to say "not here". Disabling Issues in
+repository settings would be the blunter version and is worse — it removes the
+tab, so there is nothing left to redirect *from* and the reporter simply leaves.
+
+The reason is the reporter, not the maintainer: someone who finds a dead NSIPS
+link should not have to work out which of three repositories owns it, and one
+correction often touches two sites. Centralizing moves that routing decision into
+a required "Which site" field on the form, which is why every form has one and
+why the central repo asserts it.
+
+`src/lib/feedback.js` builds the same links for the app footer, prefilled with
+`location.href` so a report says which page it came from without being asked.
+The test suite asserts the footer and the redirect name the same three templates
+— two files edited months apart that 404 for a real person if they drift. What
+it deliberately does *not* check is whether those templates exist over there: a
+test reaching into a sibling working copy passes on one machine and silently
+skips everywhere else, which is exactly the homepage crawl check that was
+deleted for that reason. The central repo validates its own templates in its own
+`tools/check.mjs`.
 
 **The retriever admits ignorance.** Field-weighted TF-IDF, normalized by the
 query's own self-score so the threshold is corpus-size independent — and
@@ -552,7 +576,7 @@ src/
 tools/
 ├── verify-corpus.mjs   node --test suite
 ├── smoke.mjs           headless-Chrome route + interaction checks
-├── sabotage.mjs        breaks real source 101 ways, asserts the suite notices
+├── sabotage.mjs        breaks real source 110 ways, asserts the suite notices
 ├── prerender.mjs       the 11 static, crawlable reference pages + sitemap.xml
 ├── go-page.mjs         the static /go bang redirector
 ├── probe.mjs           retrieval diagnostic

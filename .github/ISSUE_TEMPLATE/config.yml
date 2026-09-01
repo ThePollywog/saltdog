@@ -1,0 +1,28 @@
+# This repository does not collect its own issues.
+#
+# Everything for every Pollywog site is filed in one queue:
+#   https://github.com/ThePollywog/thepollywog.github.io/issues
+#
+# The reason is the reporter, not the maintainer. Someone who finds a dead NSIPS
+# link should not have to work out which of three repositories owns it, and a
+# single correction often touches two sites at once. The forms over there open
+# with a "Which site" dropdown, which moves that routing decision off the
+# reporter and into a field.
+#
+# blank_issues_enabled: false is what makes this work. With no templates in this
+# repository and blank issues off, the "New issue" button lands on a chooser
+# page showing only the links below. Turning Issues off in repository settings
+# would be the blunter version and is worse — it removes the tab entirely, so
+# there is nothing left to redirect FROM and the reporter just leaves.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Something is wrong on a page
+    url: https://github.com/ThePollywog/thepollywog.github.io/issues/new?template=content-correction.yml&site=SALTDOG
+    about: A dead link, a superseded instruction, a wrong rank, award or date.
+  - name: Add or change a feature
+    url: https://github.com/ThePollywog/thepollywog.github.io/issues/new?template=feature-request.yml&site=SALTDOG
+    about: A missing system link, a reference card, a calculator, a go shortcut.
+  - name: Something is broken
+    url: https://github.com/ThePollywog/thepollywog.github.io/issues/new?template=bug.yml&site=SALTDOG
+    about: A page that will not load or a control that does nothing.
