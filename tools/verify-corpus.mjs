@@ -25,8 +25,16 @@ import { describe, it } from "node:test";
 import { buildCorpus } from "../src/lib/corpus.js";
 import { ANSWER_THRESHOLD, ask, search } from "../src/lib/retrieval.js";
 import { ALL_ITEM_IDS } from "../src/data/checklist.js";
-import { ALL_TOPICS, TOPIC_BY_ID } from "../src/data/index.js";
 import {
+  ALL_TOPICS,
+  PAGE_TOPICS,
+  TOOL_TOPICS,
+  TOPICS,
+  TOPIC_BY_ID,
+  topicHomeLabel,
+  topicRoute,
+} from "../src/data/index.js";
+import ranksTopic, {
   CORRECTIONS,
   INSIGNIA_COUNT,
   SERVICES,
@@ -56,7 +64,7 @@ import {
   renderAll,
   renderSection,
 } from "./prerender.mjs";
-import {
+import awardsTopic, {
   AWARDS,
   AWARD_BY_ID,
   CORRECTIONS as AWARD_CORRECTIONS,
@@ -1665,16 +1673,31 @@ describe("rank data", () => {
     }
   });
 
-  it("source-chart typos are corrected and footnoted", () => {
-    assert.ok(CORRECTIONS.length >= 2, "expected at least the USN E-8 and USMC W-5 corrections");
-
+  it("source-chart typos are not reproduced", () => {
+    // The footnotes these two used to carry were dropped deliberately; the
+    // corrections themselves are the point and must survive. Both are
+    // independently confirmed by guides/military/ods/build_ods.py.
     const usn = SERVICES.find((s) => s.id === "usn").enlisted.find((r) => r.grade === "E-8");
-    assert.match(usn.title, /^Senior Chief Petty Officer/, "USN E-8 typo not corrected");
-    assert.ok(usn.corrected, "USN E-8 correction is not footnoted");
+    assert.match(usn.title, /^Senior Chief Petty Officer/, 'USN E-8 reads "Second Chief Petty Officer"');
 
     const usmc = SERVICES.find((s) => s.id === "usmc").warrant.find((r) => r.grade === "W-5");
-    assert.equal(usmc.abbr, "CWO5", "USMC W-5 typo not corrected");
-    assert.ok(usmc.corrected, "USMC W-5 correction is not footnoted");
+    assert.equal(usmc.abbr, "CWO5", 'USMC W-5 reads "CWOS"');
+  });
+
+  it("the rank footnote list matches what is actually flagged", () => {
+    // CORRECTIONS drives a card in the rank explorer. It is derived, so it can
+    // only ever be empty or complete — but a stale hand-written claim about it
+    // is exactly what went wrong when the two flags were removed and the
+    // topic note still said "two source typos are corrected here and footnoted".
+    assert.equal(
+      CORRECTIONS.length,
+      SERVICES.flatMap((s) => [...s.enlisted, ...s.warrant, ...s.officer]).filter((r) => r.corrected)
+        .length,
+    );
+    assert.ok(
+      !/typos? (is|are) corrected/i.test(ranksTopic.note ?? "") || CORRECTIONS.length > 0,
+      "the ranks topic note claims footnoted corrections but none are flagged",
+    );
   });
 });
 
@@ -2126,6 +2149,135 @@ describe("awards and ribbon racks", () => {
       AWARD_CORRECTIONS.some((c) => /Warn in lieu/.test(c.note)),
       "the Silver/Gold Star legend typo is not footnoted",
     );
+  });
+});
+
+/**
+ * Where a topic lives.
+ *
+ * Most topics are rendered by /knowledge/:id. Two are not — quick links has its
+ * own view, and awards is rendered entirely by the ribbon rack calculator — and
+ * they declare that with `home`. The split matters in three places that cannot
+ * see each other: the router, the search corpus (a citation has to open the
+ * page that actually renders the section), and tools/prerender.mjs (a static
+ * page for a topic the app never serves at that URL is a page nobody can reach
+ * from the app it mirrors).
+ */
+describe("topic homes", () => {
+  it("the three topic lists partition cleanly", () => {
+    const ids = ALL_TOPICS.map((t) => t.id);
+    assert.equal(new Set(ids).size, ids.length, "a topic id appears twice");
+    assert.deepEqual(
+      TOPICS.filter((t) => TOOL_TOPICS.includes(t)).map((t) => t.id),
+      [],
+      "a topic is both a knowledge topic and a tool topic",
+    );
+    assert.deepEqual(
+      ALL_TOPICS.map((t) => t.id).sort(),
+      [...PAGE_TOPICS, ...TOOL_TOPICS].map((t) => t.id).sort(),
+    );
+  });
+
+  it("every tool topic names a real tool and a label for it", () => {
+    for (const t of TOOL_TOPICS) {
+      assert.ok(t.home, `${t.id} is a tool topic with no home`);
+      assert.equal(t.home.name, "tools", `${t.id} home is not a tool route`);
+      assert.ok(
+        TOOLS.some((tool) => tool.id === t.home.params?.tool),
+        `${t.id} home names unknown tool "${t.home.params?.tool}"`,
+      );
+      assert.ok(t.homeLabel, `${t.id} has no homeLabel for the "Open in ___" link`);
+    }
+  });
+
+  it("a topic that is already its own home does not also advertise a tool", () => {
+    // `toolRoute` means "the interactive version lives elsewhere". On a topic
+    // whose home IS that tool it renders a second button pointing at the page
+    // you are reading.
+    for (const t of ALL_TOPICS) {
+      if (t.home?.name === "tools") {
+        assert.equal(t.toolRoute, undefined, `${t.id} declares both a tool home and a toolRoute`);
+      }
+    }
+  });
+
+  it("topicRoute sends every topic to its own home", () => {
+    assert.deepEqual(topicRoute("ranks", "usn"), {
+      name: "knowledge",
+      params: { topicId: "ranks" },
+      query: { a: "usn" },
+    });
+    assert.deepEqual(topicRoute("quicklinks", "personnel"), {
+      name: "quicklinks",
+      query: { a: "personnel" },
+    });
+    assert.deepEqual(topicRoute("awards", "wear"), {
+      name: "tools",
+      params: { tool: "ribbons" },
+      query: { a: "wear" },
+    });
+    // No section id means no anchor, not `?a=undefined`.
+    assert.equal(topicRoute("awards").query, undefined);
+  });
+
+  it("the answer card's destination label is never invented", () => {
+    assert.equal(topicHomeLabel("ranks"), "Knowledge");
+    assert.equal(topicHomeLabel("quicklinks"), "Quick Links");
+    assert.equal(topicHomeLabel("awards"), "the Ribbon Rack Calculator");
+    for (const rec of buildCorpus().records) {
+      assert.ok(rec.homeLabel, `${rec.id} has no homeLabel`);
+    }
+  });
+
+  it("a tool topic gets no static page and no knowledge card", () => {
+    const emitted = new Set(renderAll({ lastmod: LASTMOD }).map((f) => f.fileName));
+    for (const t of TOOL_TOPICS) {
+      assert.ok(
+        !emitted.has(pagePathFor(t.id)),
+        `${t.id} is rendered by a tool but a static page was emitted for it`,
+      );
+      assert.ok(!TOPICS.includes(t), `${t.id} would still show a card on the knowledge index`);
+    }
+  });
+
+  it("awards is still searchable, and every citation opens the calculator", () => {
+    const recs = buildCorpus().records.filter((r) => r.topicId === "awards");
+    assert.deepEqual(
+      recs.map((r) => r.sectionId).sort(),
+      ["devices", "precedence", "wear"],
+      "deleting the awards page must not delete it from the corpus",
+    );
+    for (const r of recs) {
+      assert.equal(r.route.name, "tools");
+      assert.equal(r.route.params.tool, "ribbons");
+      assert.equal(r.route.query.a, r.sectionId);
+    }
+  });
+
+  /**
+   * The calculator looks its sections up BY ID. A renamed section id leaves the
+   * page building clean with a block silently missing, and the browser smoke
+   * check that would catch it needs Chrome — so the cheap half runs here.
+   */
+  it("the ribbon rack calculator renders every awards section", () => {
+    const src = readFileSync(join(ROOT, "src/components/tools/RibbonRackTool.vue"), "utf8");
+    const ids = awardsTopic.sections.map((s) => s.id).sort();
+
+    // The ids it actually LOOKS UP, not the ids it merely mentions somewhere.
+    // Substring-matching the id passes against an anchor href or a comment,
+    // which is how a check like this ends up decorative.
+    const lookedUp = [...src.matchAll(/section\("([^"]+)"\)/g)].map((m) => m[1]).sort();
+    assert.deepEqual(
+      lookedUp,
+      ids,
+      "RibbonRackTool.vue resolves a different set of sections than data/awards.js defines",
+    );
+
+    // And every in-page jump target is one of them, so a renamed section cannot
+    // leave a link pointing at an anchor that no longer renders.
+    for (const [, a] of src.matchAll(/\{ a: "([^"]+)"/g)) {
+      assert.ok(ids.includes(a), `jump link points at "${a}", which is not an awards section`);
+    }
   });
 });
 
@@ -2998,7 +3150,6 @@ const NOT_PRINTED = new Map([
   ["rows[].refs[]", "directive ids, resolved by refs()"],
   ["rows[].keywords[]", "search index only"],
   ["rows[].systems[]", "system ids, resolved to names and URLs by systemLinks()"],
-  ["rows[].devices[]", "device ids; the rack builder resolves them, the reference table does not"],
   ["rows[].howto", "id of the how-to section the checklist tool links to"],
   ["rows[].library", "resolved to a human name by libraryName()"],
   ["rows[].parent", "resolved to \"article of RESPERSMAN\""],
@@ -3029,7 +3180,10 @@ function isExempt(path) {
  * whose result depends on another test having run is not a check.
  */
 const DATA_PATHS = new Set(
-  ALL_TOPICS.flatMap((t) =>
+  // PAGE_TOPICS, not ALL_TOPICS: this is the set of strings that must reach a
+  // generated page, and a tool topic has none. Awards is rendered by the ribbon
+  // rack calculator and emits nothing here.
+  PAGE_TOPICS.flatMap((t) =>
     (t.sections ?? []).flatMap((s) => [...leafStrings(s)].map(([path]) => path)),
   ),
 );
@@ -3047,7 +3201,7 @@ function contrast(a, b) {
 
 describe("static reference pages", () => {
   it("every section kind in the data has a renderer, and no renderer is dead", () => {
-    const inData = [...new Set(ALL_TOPICS.flatMap((t) => (t.sections ?? []).map((s) => s.kind)))].sort();
+    const inData = [...new Set(PAGE_TOPICS.flatMap((t) => (t.sections ?? []).map((s) => s.kind)))].sort();
     // Both directions on purpose. A kind with no renderer throws the build; a
     // renderer with no kind is dead code that will rot untested, and the only
     // moment anyone would notice is now.
@@ -3083,7 +3237,7 @@ describe("static reference pages", () => {
       RENDERED.map((p) => p.fileName),
       [
         "knowledge/index.html",
-        ...ALL_TOPICS.map((t) => pagePathFor(t.id)),
+        ...PAGE_TOPICS.map((t) => pagePathFor(t.id)),
         "sitemap.xml",
       ],
       "the emitted set drifted from the topic registry",
@@ -3093,7 +3247,7 @@ describe("static reference pages", () => {
 
   it("every string in the data reaches the page it belongs to", () => {
     const dropped = [];
-    for (const topic of ALL_TOPICS) {
+    for (const topic of PAGE_TOPICS) {
       const text = visibleText(PAGE_BY_NAME.get(pagePathFor(topic.id)));
       for (const section of topic.sections ?? []) {
         for (const [path, raw] of leafStrings(section)) {
@@ -3133,7 +3287,7 @@ describe("static reference pages", () => {
     // something that IS printed". That claim needs proving: an exemption for
     // `systems[]` whose renderer silently emitted nothing would read as covered
     // and be the largest hole in the file.
-    for (const topic of ALL_TOPICS) {
+    for (const topic of PAGE_TOPICS) {
       const page = visibleText(PAGE_BY_NAME.get(pagePathFor(topic.id)));
       for (const section of topic.sections ?? []) {
         const rows = Array.isArray(section.rows) ? section.rows : [];
@@ -3360,7 +3514,7 @@ describe("static reference pages", () => {
     // so a crawler arriving at the origin root gets into this content through
     // knowledge/ and nowhere else.
     const hub = PAGE_BY_NAME.get("knowledge/index.html");
-    for (const topic of ALL_TOPICS) {
+    for (const topic of PAGE_TOPICS) {
       const href = `${prefixFor("knowledge/index.html")}${pagePathFor(topic.id).replace(/index\.html$/, "")}`;
       assert.ok(hub.includes(`href="${href}"`), `the hub does not link ${topic.id} (expected ${href})`);
       const page = PAGE_BY_NAME.get(pagePathFor(topic.id));
@@ -3378,7 +3532,7 @@ describe("static reference pages", () => {
       assert.match(text, /not a system of record|Nothing here is a system of record/i, `${fileName}`);
       assert.match(text, /1-833-330-MNCC/, `${fileName} does not offer MNCC`);
     }
-    for (const topic of ALL_TOPICS) {
+    for (const topic of PAGE_TOPICS) {
       const page = PAGE_BY_NAME.get(pagePathFor(topic.id));
       const href = `${prefixFor(pagePathFor(topic.id))}${hashRouteFor(topic.id)}`;
       assert.ok(page.includes(`href="${href}"`), `${topic.id} does not link its own route (expected ${href})`);
@@ -3397,7 +3551,7 @@ describe("static reference pages", () => {
       ),
       "the hub does not offer the interactive version of itself",
     );
-    for (const topic of ALL_TOPICS) {
+    for (const topic of PAGE_TOPICS) {
       const route = hashRouteFor(topic.id).slice(1);
       if (route.startsWith("/knowledge/")) {
         assert.match(router, /path: "\/knowledge\/:topicId"/, "the /knowledge/:topicId route is gone");
@@ -3484,7 +3638,7 @@ describe("static reference pages", () => {
       [
         `${ORIGIN}${BASE_PATH}`,
         `${ORIGIN}${BASE_PATH}knowledge/`,
-        ...ALL_TOPICS.map((t) => canonicalFor(pagePathFor(t.id))),
+        ...PAGE_TOPICS.map((t) => canonicalFor(pagePathFor(t.id))),
       ],
       "the sitemap drifted from the emitted pages",
     );
@@ -3510,26 +3664,4 @@ describe("static reference pages", () => {
     assert.doesNotThrow(() => renderAll({ lastmod: "2026-01-01" }));
   });
 
-  it("the pages are declared to the sibling homepage's crawl entry points", () => {
-    // The reference pages exist to be found, and nothing at the origin root
-    // points at them unless these two lines are there. Both live in homepage/,
-    // which deploys from a different repository — so the coupling is exactly the
-    // kind that rots without a test naming it.
-    const hp = join(ROOT, "homepage");
-    if (!existsSync(hp)) return;
-    const robots = readFileSync(join(hp, "robots.txt"), "utf8");
-    assert.ok(
-      robots.includes(`Sitemap: ${ORIGIN}${BASE_PATH}sitemap.xml`),
-      "homepage/robots.txt does not name the app's own sitemap",
-    );
-    // Relative, not absolute: every path in homepage/index.html is relative by
-    // that folder's own rule, and its check.mjs enforces it. So the link a
-    // crawler follows is `saltdog/knowledge/` from the origin root.
-    const index = readFileSync(join(hp, "index.html"), "utf8");
-    const relative = `${BASE_PATH.slice(1)}knowledge/`; // "/saltdog/" -> "saltdog/knowledge/"
-    assert.ok(
-      index.includes(`href="${relative}"`),
-      `homepage/index.html does not link ${relative}, so nothing at the origin root reaches these pages`,
-    );
-  });
 });

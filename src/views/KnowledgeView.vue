@@ -32,11 +32,14 @@ watch(
   { immediate: true },
 );
 
-// Quick links has its own view; if someone reaches it here, forward them.
+// A topic that declares a `home` is rendered somewhere else — quick links has
+// its own view, awards is rendered by the ribbon rack calculator. Forward
+// rather than render a second copy here, so a link shared before the topic
+// moved still lands on the content instead of on the index.
 watch(
-  () => props.topicId,
-  (id) => {
-    if (id === "quicklinks") router.replace({ name: "quicklinks", query: route.query });
+  topic,
+  (t) => {
+    if (t?.home) router.replace({ ...t.home, query: route.query });
   },
   { immediate: true },
 );

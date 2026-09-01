@@ -8,12 +8,6 @@
  * cell, and cells are findable, so tools/extract-ranks.mjs cuts them into
  * public/img/ranks.png and each rank below carries its tile index.
  *
- * TWO SOURCE TYPOS ARE CORRECTED HERE, both flagged via `corrected` so the UI
- * can footnote them. Both corrections are independently confirmed by
- * guides/military/ods/build_ods.py, which renders them correctly:
- *   - USN E-8 prints "Second Chief Petty Officer" -> Senior Chief Petty Officer (SCPO)
- *   - USMC W-5 prints "CWOS" -> CWO5
- *
  * Tier gaps are real, not omissions: USCG has only W-2..W-4; the Air Force and
  * Space Force have no warrant tier; the Marine Corps and Space Force charts
  * carry no wartime 5-star grade.
@@ -55,9 +49,7 @@ export const SERVICES = [
       r("E-5", "Petty Officer Second Class", "PO2"),
       r("E-6", "Petty Officer First Class", "PO1"),
       r("E-7", "Chief Petty Officer", "CPO"),
-      r("E-8", "Senior Chief Petty Officer", "SCPO", {
-        corrected: 'Source chart prints "Second Chief Petty Officer".',
-      }),
+      r("E-8", "Senior Chief Petty Officer", "SCPO"),
       r("E-9", "Master Chief Petty Officer", "MCPO", {
         variants: ["Fleet Master Chief Petty Officer", "Command Master Chief Petty Officer"],
       }),
@@ -107,9 +99,7 @@ export const SERVICES = [
       r("W-2", "Chief Warrant Officer 2", "CWO2"),
       r("W-3", "Chief Warrant Officer 3", "CWO3"),
       r("W-4", "Chief Warrant Officer 4", "CWO4"),
-      r("W-5", "Chief Warrant Officer 5", "CWO5", {
-        corrected: 'Source chart prints "CWOS".',
-      }),
+      r("W-5", "Chief Warrant Officer 5", "CWO5"),
     ],
     officer: [
       r("O-1", "Second Lieutenant", "2ndLt"),
@@ -385,8 +375,7 @@ export default {
     "general",
   ],
   note:
-    "Insignia artwork is cut from the defense.gov source charts; download a chart for the full-size original. " +
-    "Two source typos are corrected here and footnoted.",
+    "Insignia artwork is cut from the defense.gov source charts; download a chart for the full-size original.",
   toolRoute: { name: "tools", params: { tool: "ranks" } },
   toolLabel: "Open the rank explorer",
   sections: SERVICES.map((s) => ({

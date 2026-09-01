@@ -607,7 +607,6 @@ const MUTATIONS = [
     file: "tools/prerender.mjs",
     find: '        { key: "abbr", title: "Abbr.", mono: true },',
     repl: "",
-    count: 2, // the ranks tables and the awards table
     breaks: "every string in the data reaches the page",
   },
   {
@@ -781,17 +780,98 @@ const MUTATIONS = [
     repl: "  if (!/\\d{4}/.test(String(lastmod))) {",
     breaks: "renderAll refuses a lastmod",
   },
+
+  // --- topic homes / the awards merge -------------------------------------
+  //
+  // Awards has no page of its own; the ribbon rack calculator renders the whole
+  // topic. Everything below is a way for that to come apart quietly.
   {
-    file: "homepage/robots.txt",
-    find: "Sitemap: https://thepollywog.github.io/saltdog/sitemap.xml",
-    repl: "",
-    breaks: "declared to the sibling homepage's crawl entry points",
+    // Put awards back on the knowledge index and it gets a card, a route, and a
+    // static page — the duplication the merge removed, re-created in one line.
+    file: "src/data/index.js",
+    find: "export const TOOL_TOPICS = [awards];",
+    repl: "export const TOOL_TOPICS = [];\nTOPICS.push(awards);",
+    breaks: "a tool topic gets no static page and no knowledge card",
   },
   {
-    file: "homepage/index.html",
-    find: '<a href="saltdog/knowledge/">One-page reference cards</a>',
-    repl: "One-page reference cards",
-    breaks: "declared to the sibling homepage's crawl entry points",
+    // The generated pages must follow the app. Emitting from ALL_TOPICS puts the
+    // calculator's own content at /knowledge/awards/, a URL nothing links to.
+    file: "tools/prerender.mjs",
+    find: "export function renderAll({ lastmod, topics = PAGE_TOPICS } = {}) {",
+    repl:
+      'export function renderAll({ lastmod, topics } = {}) {\n' +
+      '  topics = topics ?? (await import("../src/data/index.js")).ALL_TOPICS;',
+    breaks: "a tool topic gets no static page and no knowledge card",
+  },
+  {
+    // Drop `home` and every awards citation goes back to a knowledge page that
+    // no longer exists.
+    file: "src/data/awards.js",
+    find: '  home: { name: "tools", params: { tool: "ribbons" } },',
+    repl: "",
+    breaks: "topicRoute sends every topic to its own home",
+  },
+  {
+    // The section anchor is what makes a citation land on the cited block
+    // rather than at the top of the calculator.
+    file: "src/data/index.js",
+    find: "  return home ? { ...home, query } : { name: \"knowledge\", params: { topicId }, query };",
+    repl: "  return home ? { ...home } : { name: \"knowledge\", params: { topicId }, query };",
+    breaks: "topicRoute sends every topic to its own home",
+  },
+  {
+    // Falling back to "Knowledge" for everything is the bug the label field
+    // replaced: the button said Knowledge and opened a tool.
+    file: "src/data/index.js",
+    find: '  return TOPIC_BY_ID.get(topicId)?.homeLabel ?? "Knowledge";',
+    repl: '  return "Knowledge";',
+    breaks: "the answer card's destination label is never invented",
+  },
+  {
+    // A topic in two lists is two cards, two pages, and two ids in the corpus.
+    file: "src/data/index.js",
+    find: "export const PAGE_TOPICS = [quicklinks, ...TOPICS];",
+    repl: "export const PAGE_TOPICS = [quicklinks, ...TOPICS, ...TOOL_TOPICS];",
+    breaks: "the three topic lists partition cleanly",
+  },
+  {
+    // Deleting the page must not delete the topic from search.
+    file: "src/data/index.js",
+    find: "export const ALL_TOPICS = [...PAGE_TOPICS, ...TOOL_TOPICS];",
+    repl: "export const ALL_TOPICS = [...PAGE_TOPICS];",
+    breaks: "awards is still searchable",
+  },
+  {
+    // A tool topic pointing at a tool that isn't registered renders a dead link.
+    file: "src/data/awards.js",
+    find: 'params: { tool: "ribbons" } },\n  homeLabel:',
+    repl: 'params: { tool: "ribbon-rack" } },\n  homeLabel:',
+    breaks: "every tool topic names a real tool",
+  },
+  {
+    // The second button, pointing at the page you are already on.
+    file: "src/data/awards.js",
+    find: '  systems: ["ndaws", "nsips"],',
+    repl:
+      '  systems: ["ndaws", "nsips"],\n' +
+      '  toolRoute: { name: "tools", params: { tool: "ribbons" } },',
+    breaks: "does not also advertise a tool",
+  },
+  {
+    // The failure this is really about: the calculator looks its sections up by
+    // id, so a rename leaves the page building clean with a block missing.
+    file: "src/components/tools/RibbonRackTool.vue",
+    find: 'const devices = section("devices");',
+    repl: 'const devices = section("device-legend");',
+    breaks: "renders every awards section",
+  },
+  {
+    // A jump link left pointing at an anchor nothing renders. Scrolls nowhere,
+    // logs nothing, looks like a dead click.
+    file: "src/components/tools/RibbonRackTool.vue",
+    find: '{ a: "devices", label: "Device legend" }',
+    repl: '{ a: "device-legend", label: "Device legend" }',
+    breaks: "renders every awards section",
   },
 ];
 

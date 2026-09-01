@@ -2,6 +2,19 @@
 /**
  * Ribbon rack calculator — pick your awards, get the rack laid out as worn.
  *
+ * This is the ONLY page for Navy awards. Precedence, the wear rules and the
+ * device legend used to live on a knowledge page as well; they are the things
+ * you want in front of you while building a rack, not on a second URL you have
+ * to hold in your head, so the topic in data/awards.js declares its `home` as
+ * this tool and the knowledge page is gone.
+ *
+ * The reference half is rendered by <TopicSection>, the same component the
+ * knowledge pages and the chat answer card use, against the same section
+ * objects — so folding the material in here did not fork it. The one section
+ * this page renders its own way is `precedence`: the picker below IS that list,
+ * in that order, and a 68-row table above a 68-row checkbox list would be the
+ * duplication all over again.
+ *
  * All the wear rules live in lib/ribbons.js so they're testable without a DOM;
  * this component is selection, persistence, and rendering only.
  *
@@ -19,28 +32,41 @@ import {
   mdiPlus,
   mdiUndoVariant,
 } from "@mdi/js";
+import awardsTopic, { CORRECTIONS, MULTIPLE_DEVICE } from "../../data/awards.js";
 import {
-  AWARDS,
-  CORRECTIONS,
-  DEVICE_BY_ID,
-  GROUPS,
-  MULTIPLE_DEVICE,
-} from "../../data/awards.js";
-import {
-  PER_ROW,
   deviceSummary,
-  devicesFor,
   layoutRack,
   spriteStyle,
 } from "../../lib/ribbons.js";
 import { useLocalStore } from "../../composables/useLocalStore.js";
+import { useCitedSection } from "../../composables/useCitedSection.js";
 import PdfButton from "../common/PdfButton.vue";
 import SystemLinks from "../common/SystemLinks.vue";
+import TopicSection from "../common/TopicSection.vue";
 
 const { state: held, reset } = useLocalStore("ribbons", {
   version: 1,
   fallback: () => ({}),
 });
+
+/**
+ * Deep-link arrival. A chat citation to `awards#wear` now lands here rather
+ * than on a knowledge page, so this tool has to honour `?a=<sectionId>` the way
+ * KnowledgeView does — otherwise every awards citation would drop the reader at
+ * the top of the calculator with no idea what was cited.
+ */
+const { cited } = useCitedSection();
+
+const section = (id) => awardsTopic.sections.find((s) => s.id === id);
+const precedence = section("precedence");
+const wear = section("wear");
+const devices = section("devices");
+
+/** Header jump links into the reference half. */
+const JUMPS = [
+  { a: "wear", label: "How a rack is worn" },
+  { a: "devices", label: "Device legend" },
+];
 
 const query = ref("");
 const undo = ref(null);
@@ -50,11 +76,19 @@ const snack = ref(false);
 const RACK_W = 104;
 const SWATCH_W = 72;
 
+/**
+ * The picker is built from the precedence section's own rows, not from a second
+ * pass over AWARDS. Same objects the cited table renders, already carrying the
+ * precedence number and the category label.
+ */
+const ROWS = precedence.rows;
+const GROUPS = [...new Map(ROWS.map((r) => [r.group, r.groupLabel])).entries()];
+
 const matches = computed(() => {
   const q = query.value.trim().toLowerCase();
   if (!q) return null;
   return new Set(
-    AWARDS.filter(
+    ROWS.filter(
       (a) =>
         a.title.toLowerCase().includes(q) ||
         (a.abbr ?? "").toLowerCase().includes(q),
@@ -67,10 +101,11 @@ const matches = computed(() => {
  * nothing are dropped entirely rather than rendered as an empty heading.
  */
 const groups = computed(() =>
-  GROUPS.map((g) => ({
-    ...g,
-    awards: AWARDS.filter(
-      (a) => a.group === g.id && (!matches.value || matches.value.has(a.id)),
+  GROUPS.map(([id, label]) => ({
+    id,
+    label,
+    awards: ROWS.filter(
+      (a) => a.group === id && (!matches.value || matches.value.has(a.id)),
     ),
   })).filter((g) => g.awards.length),
 );
@@ -151,9 +186,28 @@ const rackText = computed(() => {
       <p class="text-body-2 mb-3" style="max-width: 74ch; opacity: 0.85">
         Select what you've been awarded. The rack is sorted into order of
         precedence and laid out three to a row, built from the bottom up the way
-        it's worn — so a short row sits on top with your most senior award.
+        it's worn — so a short row sits on top with your most senior award. All
+        68 ribbons, the wear rules and the full device legend are on this page.
       </p>
-      <PdfButton file="usn-ribbons.pdf" describes="the ribbons and devices chart" label="Original PDF" />
+      <div class="d-flex flex-wrap align-center ga-2">
+        <PdfButton file="usn-ribbons.pdf" describes="the ribbons and devices chart" label="Original PDF" />
+        <!--
+          Jump links, because the reference half sits below a 68-row picker and
+          would otherwise be invisible to anyone who didn't scroll past it.
+
+          They go through the router as `?a=<section>` rather than as a bare
+          `href="#sec-wear"`. The app is hash-routed, so a fragment anchor would
+          overwrite the route itself and navigate to nowhere; `?a=` is the deep
+          link the router's scrollBehavior already understands, and it moves
+          focus as well as scrolling.
+        -->
+        <router-link
+          v-for="jump in JUMPS"
+          :key="jump.a"
+          :to="{ name: 'tools', params: { tool: 'ribbons' }, query: { a: jump.a } }"
+          class="salt-link text-caption"
+        >{{ jump.label }}</router-link>
+      </div>
     </header>
 
     <!--
@@ -271,10 +325,22 @@ const rackText = computed(() => {
       </div>
     </v-card>
 
-    <!-- Picker. Grouped and searchable; a flat list of 68 checkboxes isn't
-         navigable, and precedence order alone isn't how people recall awards. -->
-    <v-card class="pa-4">
-      <span class="salt-eyebrow">Select awards</span>
+    <!--
+      Picker AND precedence list — hence the `sec-precedence` id, which is where
+      a chat citation to awards#precedence lands. Every row carries its
+      precedence number, so "where does the Combat Action Ribbon go" is answered
+      by the same list you tick it in. Grouped and searchable: a flat run of 68
+      checkboxes isn't navigable, and precedence order alone isn't how people
+      recall what they hold.
+    -->
+    <v-card
+      id="sec-precedence"
+      tabindex="-1"
+      :class="['pa-4', { 'salt-cited': cited === 'precedence' }]"
+    >
+      <h3 id="sec-precedence-h" class="salt-eyebrow">
+        Select awards — all 68, in order of precedence
+      </h3>
       <v-text-field
         v-model="query"
         label="Search awards"
@@ -290,12 +356,17 @@ const rackText = computed(() => {
       </p>
 
       <section v-for="g in groups" :key="g.id" class="mb-4">
-        <h3 class="salt-eyebrow mt-4">{{ g.label }}</h3>
+        <h4 class="salt-eyebrow mt-4">{{ g.label }}</h4>
         <div
           v-for="award in g.awards"
           :key="award.id"
           class="d-flex align-center ga-3 py-1"
         >
+          <!-- Fixed-width and monospace so the numbers form a column rather
+               than ragging with the label widths. -->
+          <span class="salt-precedence text-caption" aria-hidden="true">
+            {{ award.precedence }}
+          </span>
           <v-checkbox
             :model-value="isHeld(award.id)"
             :label="award.title"
@@ -312,6 +383,17 @@ const rackText = computed(() => {
         </div>
       </section>
     </v-card>
+
+    <!--
+      The reference half, rendered by the same component the chat answer card
+      uses against the same section objects. Not retyped here: if the wear rules
+      change in data/awards.js, this page and every citation to it change
+      together or not at all.
+    -->
+    <div class="mt-8">
+      <TopicSection :section="wear" :level="3" :cited="cited === 'wear'" />
+      <TopicSection :section="devices" :level="3" :cited="cited === 'devices'" />
+    </div>
 
     <p class="text-caption mt-4 mb-0" style="opacity: 0.75; max-width: 74ch">
       Planning aid only. Precedence and device rules come from the Navy
@@ -363,5 +445,13 @@ const rackText = computed(() => {
   display: inline-block;
   border: 1px solid rgba(var(--v-border-color), 0.55);
   image-rendering: -webkit-optimize-contrast;
+}
+/* Right-aligned so 1 and 68 share a right edge and the checkboxes stay in line. */
+.salt-precedence {
+  flex: 0 0 auto;
+  width: 2.25rem;
+  text-align: right;
+  font-family: var(--salt-mono, monospace);
+  opacity: 0.6;
 }
 </style>

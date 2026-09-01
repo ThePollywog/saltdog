@@ -8,7 +8,7 @@
  * That is the no-duplication guarantee: the chat answer renders the same
  * `section` object the knowledge page renders, so the two cannot drift.
  */
-import { ALL_TOPICS, topicRoute } from "../data/index.js";
+import { ALL_TOPICS, topicHomeLabel, topicRoute } from "../data/index.js";
 import { directiveText, directivesFor } from "../data/directives.js";
 import { tokenize } from "./retrieval.js";
 
@@ -191,6 +191,10 @@ export function buildCorpus() {
         toolRoute: topic.toolRoute ?? null,
         toolLabel: topic.toolLabel ?? null,
         route: topicRoute(topic.id, section.id),
+        // What the answer card calls that destination. Derived here rather than
+        // branched on the topic id in the template, which was already wrong for
+        // any topic that is neither Knowledge nor Quick Links.
+        homeLabel: topicHomeLabel(topic.id),
         section,
         tf: termFreq(bodyTokens),
         headTokens: new Set(tokenize(`${section.heading} ${topic.title}`)),

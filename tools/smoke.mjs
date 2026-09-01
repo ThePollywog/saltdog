@@ -36,7 +36,10 @@ const ROUTES = [
   ["#/knowledge/navy-fleets", "Fleet"],
   ["#/knowledge/joint-codes", "Joint"],
   ["#/knowledge/phonetic-alphabet", "Phonetic"],
-  ["#/knowledge/awards", "Precedence"],
+  // Awards has no knowledge page any more — the ribbon rack calculator renders
+  // the whole topic. The route stays smoked because links to it were shared
+  // before it moved, and what is asserted is that they land on the tool.
+  ["#/knowledge/awards", "Ribbon Rack Calculator"],
   // A line of the creed, not the topic title: this is the one page whose content
   // is a `verbatim` block, and the whole risk with a new section kind is that the
   // heading renders while the rows do not. Matching on the title would pass
@@ -836,6 +839,96 @@ async function checkRibbonRack() {
 }
 
 /**
+ * The ribbon rack page carries the ENTIRE awards topic.
+ *
+ * This is the check behind the merge. The awards knowledge page was deleted on
+ * the claim that everything it held now lives on the calculator, and that claim
+ * is not self-enforcing: the wear rules and the device legend are rendered by
+ * <TopicSection> against section objects looked up BY ID, so a renamed section
+ * id leaves the page building cleanly with a silently missing block. Nothing
+ * else would notice — the data tests still pass, because the data is still
+ * there.
+ *
+ * So every string is read out of data/awards.js and looked for in the rendered
+ * text. Not a sample: the whole point of folding the topic in was that none of
+ * it got dropped on the way.
+ */
+async function checkRibbonReference() {
+  const awards = await import("../src/data/awards.js");
+  const topic = awards.default;
+  const wear = topic.sections.find((s) => s.id === "wear");
+  const devices = topic.sections.find((s) => s.id === "devices");
+  const precedence = topic.sections.find((s) => s.id === "precedence");
+
+  const problems = await withPage(`${BASE}/#/tools/ribbons`, async (page) => {
+    await page.waitFor('!!document.querySelector(\'input[type="checkbox"]\')', 8000);
+    const text = String(await page.evaluate("document.body.innerText"));
+    // Collapse whitespace on both sides: the browser rewraps, and a rule that
+    // spans a line break would otherwise look absent.
+    // innerText, not textContent, so this asserts what a reader actually sees.
+    // That means it also applies text-transform, and the device names are
+    // rendered through .salt-eyebrow, which uppercases them — hence the fold.
+    // Whitespace is collapsed on both sides because the browser rewraps, and a
+    // rule spanning a line break would otherwise look absent.
+    const flat = text.replace(/\s+/g, " ").toLowerCase();
+    const has = (str) => flat.includes(String(str).replace(/\s+/g, " ").toLowerCase());
+
+    for (const step of wear.rows) {
+      if (!has(step)) page.fail(`wear rule missing: "${String(step).slice(0, 60)}…"`);
+    }
+    for (const row of devices.rows) {
+      if (!has(row.k)) page.fail(`device missing from the legend: ${row.k}`);
+      if (!has(row.v)) page.fail(`device rule missing for ${row.k}`);
+    }
+
+    // The picker is the precedence list, so it has to BE the list: all 68, in
+    // order, each showing its number. A filter bug that dropped a group would
+    // otherwise just look like a shorter page.
+    const numbers = await page.evaluate(
+      "JSON.stringify([...document.querySelectorAll('.salt-precedence')].map(el => el.textContent.trim()))",
+    );
+    const shown = JSON.parse(numbers).map(Number);
+    const want = precedence.rows.map((r) => r.precedence);
+    if (shown.join(",") !== want.join(",")) {
+      page.fail(
+        `picker shows ${shown.length} precedence numbers, expected ${want.length} in order ` +
+          `(first mismatch at index ${shown.findIndex((n, i) => n !== want[i])})`,
+      );
+    }
+    for (const row of precedence.rows) {
+      if (!has(row.title)) page.fail(`award missing from the picker: ${row.title}`);
+    }
+  });
+  record("ribbon rack: the whole awards topic is on the page", problems);
+}
+
+/**
+ * A citation to an awards section lands on the tool, scrolled and focused.
+ *
+ * The chat cites `awards#wear`; that used to resolve to a knowledge page, which
+ * handled `?a=` through useCitedSection. Routing those citations at a tool means
+ * the tool has to do the same thing, and the failure mode if it does not is
+ * quiet: the reader arrives at the top of a 68-row calculator with no indication
+ * of what was cited, which looks like an ordinary page load.
+ */
+async function checkRibbonCitation() {
+  const problems = await withPage(`${BASE}/#/tools/ribbons?a=wear`, async (page) => {
+    await page.waitFor("!!document.getElementById('sec-wear')", 8000);
+    const focused = await page.evaluate("document.activeElement && document.activeElement.id");
+    if (focused !== "sec-wear") {
+      page.fail(`focus landed on "${focused}", expected the cited section sec-wear`);
+    }
+    const offscreen = await page.evaluate(
+      "document.getElementById('sec-wear').getBoundingClientRect().top > window.innerHeight",
+    );
+    if (offscreen === true || offscreen === "true") {
+      page.fail("the cited section was never scrolled into view");
+    }
+  });
+  record("ribbon rack: an awards citation lands on the cited section", problems);
+}
+
+/**
  * Rank insignia render as distinct artwork, on the right rank.
  *
  * The data-level tests prove the indices are a dense sequence and the sheet is
@@ -1570,7 +1663,6 @@ async function checkStaticPages() {
     ["knowledge/", "Navy reference cards"],
     ["quick-links/", "Navy System Quick Links"],
     ["knowledge/ranks/", "Master Chief Petty Officer"],
-    ["knowledge/awards/", "Medal of Honor"],
     ["knowledge/doctrine/", "I am a United States Sailor."],
     ["knowledge/directives/", "BUPERSINST"],
   ];
@@ -1672,8 +1764,13 @@ async function checkStaticPages() {
       page.fail("sitemap.xml was not emitted by the build");
       return;
     }
+    // Derived, not a hand-written floor: the app root, the hub, and one page per
+    // page-topic. A threshold would have quietly kept passing when the awards
+    // page was removed from the set this file is supposed to describe.
+    const { PAGE_TOPICS } = await import("../src/data/index.js");
+    const want = PAGE_TOPICS.length + 2;
     const count = xml.split("<loc>").length - 1;
-    if (count < 13) page.fail(`sitemap lists only ${count} URLs`);
+    if (count !== want) page.fail(`sitemap lists ${count} URLs, expected ${want}`);
     if (!/<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/.test(xml)) {
       page.fail("lastmod is not a W3C date — the build's git lookup fell through");
     }
@@ -1706,6 +1803,8 @@ try {
   await checkPersistence();
   await checkTheme();
   await checkAboutStorage();
+  await checkRibbonReference();
+  await checkRibbonCitation();
   await checkStaticPages();
 } finally {
   // Kill both even if a check threw, or the run leaves a Chrome and a vite

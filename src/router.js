@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import HomeView from "./views/HomeView.vue";
+import { SCROLL_OFFSET } from "./composables/useCitedSection.js";
 
 // Hash history so dist/ drops onto any static host (GitHub Pages, S3, a file
 // share) with no rewrite rules.
@@ -64,7 +65,7 @@ const router = createRouter({
     if (to.query.a) {
       return {
         el: `#sec-${to.query.a}`,
-        top: 76,
+        top: SCROLL_OFFSET,
         behavior: reduced ? "auto" : "smooth",
       };
     }

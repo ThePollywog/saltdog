@@ -389,10 +389,27 @@ export const DEVICE_BY_ID = new Map(DEVICES.map((d) => [d.id, d]));
 
 const GROUP_LABEL = new Map(GROUPS.map((g) => [g.id, g.label]));
 
+/**
+ * The awards topic, which has NO knowledge page of its own.
+ *
+ * Everything here — precedence, wear rules, device legend — is rendered by the
+ * ribbon rack calculator, so `home` points at the tool instead of at
+ * `/knowledge/awards`. The topic still exists because the search corpus is
+ * built from topics, and the chat answer card renders these `section` objects
+ * directly: the calculator and a cited answer stay identical by construction,
+ * which is the same guarantee the knowledge pages have.
+ *
+ * There is deliberately no `toolRoute` here. That field means "the interactive
+ * version of this reference lives elsewhere"; for this topic the tool IS where
+ * it lives, and a second button pointing at the page you are already on is
+ * noise.
+ */
 export default {
   id: "awards",
   title: "Navy Awards & Precedence",
   eyebrow: "Awards",
+  home: { name: "tools", params: { tool: "ribbons" } },
+  homeLabel: "the Ribbon Rack Calculator",
   blurb:
     "All 68 Navy ribbons in order of precedence, with the devices that go on them.",
   sourcePdf: "usn-ribbons.pdf",
@@ -422,10 +439,8 @@ export default {
   note:
     "Precedence and device rules are transcribed from the Navy ribbons-and-devices chart. " +
     "It is not SECNAVINST 1650.1, carries no eligibility rules, and predates any award created after the chart was published. " +
-    "One source typo is corrected here and footnoted.",
+    "Two source typos are corrected here and footnoted.",
   systems: ["ndaws", "nsips"],
-  toolRoute: { name: "tools", params: { tool: "ribbons" } },
-  toolLabel: "Open the ribbon rack calculator",
   /**
    * ONE precedence section, not one per group.
    *

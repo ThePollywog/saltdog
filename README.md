@@ -14,12 +14,12 @@ NOSC, or MNCC (1-833-330-MNCC).
 | --- | --- |
 | **Quick Links** (`#/quick-links`) | 30 systems across 6 categories — pay, records, readiness, training, benefits, support — each marked CAC-required or open, with a filter |
 | **Every checklist item links its application** | 30 of 33 items and all 11 procedures name the system that completes them, as a button. The three that don't are conversations, not websites |
-| **Knowledge** (`#/knowledge`) | 10 topics / 59 reference sections: annual checklist, EVAL–FITREP calendar, ranks for all six services, doctrine and customs, awards precedence, combatant commands, Navy fleets, joint staff codes, phonetic alphabet, and the instructions behind all of it. Ranks show the real insignia; the COCOM and fleet pages carry a projected world map |
+| **Knowledge** (`#/knowledge`) | 9 topics / 56 reference sections: annual checklist, EVAL–FITREP calendar, ranks for all six services, doctrine and customs, combatant commands, Navy fleets, joint staff codes, phonetic alphabet, and the instructions behind all of it. Ranks show the real insignia; the COCOM and fleet pages carry a projected world map |
 | **Tools** (`#/tools`) | Readiness checklist, due-date planner with `.ics` export, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, ribbon rack calculator, six-service rank explorer |
-| **Reference assistant** | Offline keyword search over all 68 cards (the 59 knowledge sections plus the 9 quick-links categories), with a WebGL orb. Not an AI, no network calls |
+| **Reference assistant** | Offline keyword search over all 68 cards (the 56 knowledge sections, the 9 quick-links categories, and the 3 awards sections the ribbon rack tool renders), with a WebGL orb. Not an AI, no network calls |
 | **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
-| **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | All 68 sections again as 12 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
+| **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | The 65 sections that have a page of their own, again as 11 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
 
 The 14 source PDFs ship in `public/pdf/` and every page links its own original,
 so any transcription can be checked against the chart it came from.
@@ -49,11 +49,11 @@ case-sensitive, so the shortcut is lowercase (`/webnavfit/` resolves there and
 ## Verification
 
 ```bash
-npm test      # 265 tests: golden questions, corpus integrity, domain rules
-npm run smoke # builds, serves, drives real Chrome over 54 checks
+npm test      # 273 tests: golden questions, corpus integrity, domain rules
+npm run smoke # builds, serves, drives real Chrome over 55 checks
 npm run verify  # both
 
-node tools/sabotage.mjs   # 82 mutations to real source; every one must be caught
+node tools/sabotage.mjs   # 91 mutations to real source; every one must be caught
 ```
 
 `npm test` is `node --test` with zero dependencies. It covers the two things
@@ -93,13 +93,22 @@ unit-testing actually repays here:
   reads as complete. It caught one on the first run: citations were printing
   `d.label` where the app prints `display(d)`, dropping the revision letter off
   every instruction cited anywhere on the site.
+- **Where each topic lives** — that the page set, the nav and the corpus agree.
+  A topic rendered by a tool must not also get a static page or a knowledge card,
+  must still be in the corpus, and must route every citation at the tool. These
+  are three files that cannot see each other, and the failure mode is silent
+  either way: a page nothing links to, or a citation that opens a route that no
+  longer exists.
 
 `npm run smoke` drives the installed Chrome over CDP — no Puppeteer, no
 Playwright, no jsdom. It checks that all 20 routes mount without a single console
 error or Vue warning, and then the behaviours a build can't prove: the chat widget
 answers a golden question and its citation deep-links to the cited section *with
 focus moved there*, the orb renders and is hidden from assistive tech, the ribbon
-rack draws real artwork in the right order, the world maps resolve to real
+rack draws real artwork in the right order and carries every word of the awards
+topic — all 68 titles in precedence order, the five wear rules and all fifteen
+device rules, read out of the data rather than typed into the check — the world
+maps resolve to real
 geometry at the right scale, tool state survives a reload, the theme choice
 persists, the drawer's one outbound link still resolves to the exact external URL
 rather than a router path, the `/go` redirector actually navigates a real browser
@@ -168,6 +177,11 @@ So `tools/prerender.mjs` emits a plain HTML file per topic at a real path
 `sitemap.xml`. No JavaScript on them at all; each links the interactive version
 and the source PDF.
 
+It emits from `PAGE_TOPICS`, not from everything the corpus indexes. Awards is
+rendered entirely by the ribbon rack calculator and has no page in the app, so
+generating one here would publish a static URL nothing links to — a page a
+crawler can reach and a reader cannot.
+
 Switching to history routing and prerendering the app instead was the obvious
 alternative and it is worse: it needs the 404-based SPA fallback, it costs
 `base: './'`, and it orphans every hash link already shared — including the one in
@@ -193,6 +207,24 @@ a citation lands on an anchor, not a page top) holding the section **by
 reference**. The answer card renders that section through the same
 `<TopicSection>` the knowledge page uses, so chat answers and pages cannot drift
 apart.
+
+**A topic knows where it lives, and it is not always a knowledge page.** Most
+topics render at `/knowledge/:id`. Two do not: quick links has its own view, and
+awards is rendered end to end by the ribbon rack calculator. Both say so with a
+`home` field, and `topicRoute()` reads it — which is one data field instead of a
+growing chain of `if (topicId === …)` in the router, the corpus, and the answer
+card's button label.
+
+Awards moved there because precedence, the wear rules and the device legend are
+what you want in front of you *while* building a rack. Split across two URLs they
+were the same material twice, so the knowledge page was deleted rather than
+cross-linked. The calculator renders the wear rules and the device legend with
+the same `<TopicSection>` the chat card uses, against the same section objects,
+so folding them in did not fork them; the picker is the precedence list, each row
+carrying its precedence number, because a 68-row table above a 68-row checkbox
+list would have re-created the duplication inside one page. The topic stays in
+the corpus, so `awards#wear` is still citable — the citation just opens the tool,
+and the tool honours `?a=` the way a knowledge page does.
 
 **The retriever admits ignorance.** Field-weighted TF-IDF, normalized by the
 query's own self-score so the threshold is corpus-size independent — and
@@ -492,8 +524,8 @@ src/
 tools/
 ├── verify-corpus.mjs   node --test suite
 ├── smoke.mjs           headless-Chrome route + interaction checks
-├── sabotage.mjs        breaks real source 82 ways, asserts the suite notices
-├── prerender.mjs       the 12 static, crawlable reference pages + sitemap.xml
+├── sabotage.mjs        breaks real source 91 ways, asserts the suite notices
+├── prerender.mjs       the 11 static, crawlable reference pages + sitemap.xml
 ├── go-page.mjs         the static /go bang redirector
 ├── probe.mjs           retrieval diagnostic
 ├── extract-ribbons.mjs cuts the 68-ribbon sprite sheet from the source PDF
@@ -506,9 +538,11 @@ One generic `KnowledgeView` driven by `/knowledge/:topicId` against the registry
 replaces what would have been seven near-identical views — and seven places to
 fix a rendering bug. Every section is a `kind` (`links`, `checklist`, `steps`,
 `verbatim`, `kv`, `code-cards`, `eval-schedule`, `phonetic`, `ranks`, `awards`,
-`map`, `directives`, `table`) dispatched by `TopicSection.vue` — and, for the
-static pages, by `SECTION_RENDERERS` in `tools/prerender.mjs`, where a kind with
-no entry fails the build.
+`map`, `directives`, `table`) dispatched by `TopicSection.vue`. The static pages
+dispatch the same way through `SECTION_RENDERERS` in `tools/prerender.mjs`, where
+a kind with no entry fails the build — and where a renderer with no kind is
+deleted, which is what happened to `awards` when that topic stopped having a
+page.
 
 The interactive tools are listed once, in `src/data/tools.js`, because the tab bar,
 the nav drawer, and the About page's count were three hardcoded copies — and the
@@ -528,14 +562,18 @@ before any topic declared `systems`, rendering nothing on all eight topics.
 
 ## Content caveats
 
-- Three source charts have typographical errors, corrected here with visible
-  footnotes rather than reproduced silently: USN E-8 prints "Second Chief Petty
-  Officer" (→ Senior Chief Petty Officer), USMC W-5 prints "CWOS" (→ CWO5), and
-  the awards chart prints "Presideantial" and "Warn in lieu of five gold stars".
-- The awards topic is the precedence list from one chart. It is the order ribbons
-  are worn in and the devices that go on them — **not** SECNAVINST 1650.1, and it
-  encodes no eligibility criteria. The rack calculator arranges what you tell it
-  you have; it does not decide what you have earned.
+- The awards chart has two typographical errors — "Presideantial" and "Warn in
+  lieu of five gold stars" — corrected here and footnoted on the page rather than
+  reproduced silently. The rank charts have two more (USN E-8 prints "Second
+  Chief Petty Officer", USMC W-5 prints "CWOS"); those are corrected in the data
+  but **not** footnoted, so the site shows the right title with no note saying the
+  chart was wrong. Both corrections are confirmed against
+  `guides/military/ods/build_ods.py` and are asserted in the test suite, so the
+  typos cannot come back unnoticed.
+- The awards material is the precedence list from one chart. It is the order
+  ribbons are worn in and the devices that go on them — **not** SECNAVINST 1650.1,
+  and it encodes no eligibility criteria. The rack calculator arranges what you
+  tell it you have; it does not decide what you have earned.
 - **The doctrine page has no local source, and it says so on the page.** The
   obvious source for the creed, the general orders and the customs material is
   *The Bluejacket's Manual*, which is copyrighted Naval Institute Press material

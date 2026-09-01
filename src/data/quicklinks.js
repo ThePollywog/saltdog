@@ -230,6 +230,10 @@ export default {
   id: "quicklinks",
   title: "Navy System Quick Links",
   eyebrow: "Link",
+  // Indexed like a knowledge topic but rendered by its own view, so `home`
+  // overrides the default /knowledge/:id route. See topicRoute() in index.js.
+  home: { name: "quicklinks" },
+  homeLabel: "Quick Links",
   blurb:
     "Major personnel, pay, training and admin systems — condensed to the ones a drilling reservist touches.",
   sourcePdf: "navy-quicklinks.pdf",

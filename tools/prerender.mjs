@@ -19,7 +19,10 @@
  * homepage's FAQ. Static siblings alongside the hash app cost none of that.
  *
  * WHAT IS AND IS NOT DUPLICATED. The data is not: every fact comes from
- * `src/data/*.js` through `ALL_TOPICS`. The PRESENTATION is — these renderers are
+ * `src/data/*.js` through `PAGE_TOPICS` — every topic with a page of its own,
+ * which is deliberately not every topic the search corpus indexes: awards is
+ * rendered by the ribbon rack calculator and has no page to mirror. The
+ * PRESENTATION is — these renderers are
  * a second implementation of what TopicSection.vue does, because a Vue template
  * cannot run in Node without dragging Vuetify through SSR, and because a static
  * page genuinely wants simpler markup than the app's.
@@ -39,11 +42,10 @@
  *      revision letter off every instruction cited on every page.
  */
 
-import { ALL_TOPICS } from "../src/data/index.js";
+import { PAGE_TOPICS } from "../src/data/index.js";
 import { viaLabel, systemsFor } from "../src/data/systems.js";
 import { directiveUrl, directivesFor, display, libraryName } from "../src/data/directives.js";
 import { insigniaStyle } from "../src/lib/insignia.js";
-import { spriteStyle } from "../src/lib/ribbons.js";
 
 /** Absolute origin, for canonicals and the sitemap. Nothing else may hardcode it. */
 export const ORIGIN = "https://thepollywog.github.io";
@@ -77,7 +79,7 @@ export const esc = (v) =>
 const lines = (...xs) => xs.filter(Boolean).join("\n");
 
 /**
- * An inline style object from insigniaStyle/spriteStyle, as a CSS declaration
+ * An inline style object from insigniaStyle, as a CSS declaration
  * string, with the sprite sheet's URL re-based.
  *
  * Both helpers return `url(./img/…)`, which is correct for a document at the app
@@ -373,36 +375,6 @@ ${(s.rows ?? [])
     );
   },
 
-  awards: (s, { prefix }) =>
-    lines(
-      table(
-        [
-          { key: "precedence", title: "#", mono: true },
-          { key: "sprite", title: "Ribbon" },
-          { key: "title", title: "Award" },
-          { key: "abbr", title: "Abbr.", mono: true },
-          { key: "groupLabel", title: "Category" },
-        ],
-        s.rows ?? [],
-        // The heading is already "Order of precedence", so the caption says the
-        // one thing it does not: which end of the list is senior.
-        "Most senior award first",
-        (key, row) => {
-          // Decoration, like the insignia: the award's name is the very next cell.
-          if (key === "sprite") {
-            return `<span class="ribbon" style="${esc(styleAttr(spriteStyle(row, 66), prefix))}" role="presentation"></span>`;
-          }
-          if (key === "title" && row.corrected) {
-            return `${esc(row.title)} <sup title="${esc(row.corrected)}">†</sup>`;
-          }
-          return null;
-        },
-      ),
-      ...(s.rows ?? [])
-        .filter((r) => r.corrected)
-        .map((r) => `      <p class="dim small">† ${esc(r.corrected)}</p>`),
-    ),
-
   /**
    * The map itself is NOT drawn here. It is 46 KB of projected path data behind an
    * async component, it is an orientation aid rather than the reference, and
@@ -614,9 +586,7 @@ const STYLE = `      :root {
       th, td { text-align: start; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
       th { color: var(--dim); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
       tbody tr:hover { background: var(--surface); }
-      .insignia, .ribbon { display: inline-block; }
-      /* Flat stripe artwork: smoothing would blur the stripe edges into each other. */
-      .ribbon { border: 1px solid var(--line); image-rendering: -webkit-optimize-contrast; }
+      .insignia { display: inline-block; }
       nav.siblings { border-top: 1px solid var(--line); padding: 22px 0 0; margin-top: 8px; }
       nav.siblings ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px 20px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
       footer { border-top: 1px solid var(--line); margin-top: 26px; padding: 20px 0 40px; color: var(--dim); font-size: 0.88rem; }
@@ -762,7 +732,7 @@ ${items}
 /**
  * One topic, as a standalone page.
  *
- * @param {object} topic     from ALL_TOPICS
+ * @param {object} topic     from PAGE_TOPICS
  * @param {object} opts
  * @param {object[]} opts.topics  every topic, for the sibling nav
  * @param {string} opts.lastmod   ISO date (YYYY-MM-DD)
@@ -959,7 +929,7 @@ ${body}
  * and the test harness enumerate the same set — a page the tests do not know
  * about is a page nobody checked.
  */
-export function renderAll({ lastmod, topics = ALL_TOPICS } = {}) {
+export function renderAll({ lastmod, topics = PAGE_TOPICS } = {}) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(lastmod))) {
     throw new Error(`prerender: lastmod must be YYYY-MM-DD, got "${lastmod}"`);
   }

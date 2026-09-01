@@ -37,7 +37,7 @@ const FALLBACK_SYSTEMS = ["mynavy-hr", "mnp", "mncc"];
           :append-icon="mdiArrowRight"
           @click="emit('navigate', result.record)"
         >
-          Open in {{ result.record.topicId === 'quicklinks' ? 'Quick Links' : 'Knowledge' }}
+          Open in {{ result.record.homeLabel }}
         </v-btn>
         <PdfButton
           v-if="result.record.sourcePdf"
