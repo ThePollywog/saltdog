@@ -693,8 +693,11 @@ export default {
   // the per-item links below are the specific ones, and repeating them here
   // would be a wall of buttons above the content they belong to.
   systems: ["mynavy-hr", "mnp", "nsips"],
-  toolRoute: { name: "tools", params: { tool: "checklist" } },
-  toolLabel: "Open the interactive checklist",
+  // Rendered by the interactive checklist. The cadence groups are its ticked
+  // rows and the how-to procedures are the drawers beneath them, so the whole
+  // topic is on the tool and the knowledge page had nothing left of its own.
+  home: { name: "tools", params: { tool: "checklist" } },
+  homeLabel: "Readiness Checklist",
   sections: [
     ...GROUPS.map((g) => ({
       id: g.id,

@@ -6,6 +6,12 @@
  * Two cases the source card doesn't cover are handled explicitly rather than
  * returning nothing: flag officers (O7-O10, different cycle) and the two months
  * with no scheduled reports.
+ *
+ * This is the ONLY page for the EVAL/FITREP calendar. The topic in
+ * data/evalCalendar.js declares its `home` as this tool, so everything it owns
+ * has to render here — the schedule and the rules did already; `coverage` is
+ * rendered by <TopicSection>, the same component the knowledge pages and the
+ * chat answer card use, against the same section object.
  */
 import { computed, ref } from "vue";
 import { mdiAlertOutline, mdiCalendarCheckOutline } from "@mdi/js";
@@ -15,10 +21,21 @@ import {
   FLAG_PAYGRADES,
   lookupPaygrade,
 } from "../../lib/evalRules.js";
-import { RULES, SCHEDULE } from "../../data/evalCalendar.js";
+import evalTopic, { RULES, SCHEDULE } from "../../data/evalCalendar.js";
+import { useCitedSection } from "../../composables/useCitedSection.js";
 import PdfButton from "../common/PdfButton.vue";
 import RefTable from "../common/RefTable.vue";
 import SystemLinks from "../common/SystemLinks.vue";
+import TopicSection from "../common/TopicSection.vue";
+
+/**
+ * A citation to `eval-fitrep#rules` lands here rather than on a knowledge page,
+ * so the tool honours `?a=<sectionId>` the way KnowledgeView does.
+ */
+const { cited } = useCitedSection();
+
+/** The caveats section, rendered from the topic rather than retyped here. */
+const coverage = evalTopic.sections.find((s) => s.id === "coverage");
 
 const grade = ref("E6");
 const result = computed(() => lookupPaygrade(grade.value));
@@ -101,7 +118,11 @@ const SCHEDULE_COLUMNS = [
       </v-alert>
     </v-card>
 
-    <section id="sec-rules" class="salt-section mb-6" tabindex="-1">
+    <section
+      id="sec-rules"
+      :class="['salt-section', 'mb-6', { 'salt-cited': cited === 'rules' }]"
+      tabindex="-1"
+    >
       <h3 class="salt-heading text-h6 mb-3">Due-Date Rules</h3>
       <dl>
         <template v-for="(r, i) in RULES" :key="i">
@@ -111,7 +132,11 @@ const SCHEDULE_COLUMNS = [
       </dl>
     </section>
 
-    <section id="sec-schedule" class="salt-section mb-6" tabindex="-1">
+    <section
+      id="sec-schedule"
+      :class="['salt-section', 'mb-6', { 'salt-cited': cited === 'schedule' }]"
+      tabindex="-1"
+    >
       <h3 class="salt-heading text-h6 mb-3">
         <v-icon :icon="mdiCalendarCheckOutline" size="18" class="mr-1" aria-hidden="true" />
         Full Reporting Calendar
@@ -136,5 +161,11 @@ const SCHEDULE_COLUMNS = [
         No periodic reports are scheduled in {{ EMPTY_MONTHS.join(" or ") }}.
       </p>
     </section>
+
+    <!-- The caveats: which paygrades this cycle covers and what falls outside
+         it. The header above says some of this in prose for the person who
+         never scrolls; this is the citable version, and the one the chat
+         answers from. -->
+    <TopicSection :section="coverage" :level="3" :cited="cited === 'coverage'" />
   </div>
 </template>

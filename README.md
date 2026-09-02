@@ -14,13 +14,13 @@ NOSC, or MNCC (1-833-330-MNCC).
 | --- | --- |
 | **Quick Links** (`#/quick-links`) | 30 systems across 6 categories — pay, records, readiness, training, benefits, support — each marked CAC-required or open, with a filter |
 | **Every checklist item links its application** | 30 of 33 items and all 11 procedures name the system that completes them, as a button. The three that don't are conversations, not websites |
-| **Knowledge** (`#/knowledge`) | 9 topics / 56 reference sections: annual checklist, EVAL–FITREP calendar, ranks for all six services, doctrine and customs, combatant commands, Navy fleets, joint staff codes, phonetic alphabet, and the instructions behind all of it. Ranks show the real insignia; the COCOM and fleet pages carry a projected world map |
-| **Tools** (`#/tools`) | Readiness checklist, due-date planner with `.ics` export, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, uniform information with a ribbon rack builder, six-service rank explorer |
-| **Reference assistant** | Offline keyword search over all 70 cards (the 56 knowledge sections, the 9 quick-links categories, and the 5 awards and uniform sections the Uniform tool renders), with a WebGL orb. Not an AI, no network calls |
+| **Knowledge** (`#/knowledge`) | 5 topics / 28 reference sections: doctrine and customs, combatant commands, Navy fleets, joint staff codes, and the instructions behind all of it. The COCOM and fleet pages carry a projected world map |
+| **Tools** (`#/tools`) | Readiness checklist, due-date planner with `.ics` export, EVAL/FITREP due-date lookup, retirement-points tracker, phonetic speller, uniform information with a ribbon rack builder, six-service rank explorer — each carrying the reference material it works from, not just the calculator |
+| **Reference assistant** | Offline keyword search over all 70 cards (the 28 knowledge sections, the 9 quick-links categories, and the 33 sections the tools render), with a WebGL orb. Not an AI, no network calls |
 | **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
 | **Report / suggest** | Footer links on every page open a prefilled issue on the project's single queue, carrying the page you were on |
-| **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | The 65 sections that have a page of their own, again as 11 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
+| **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | The 37 sections that have a page of their own, again as 7 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
 
 The 14 source PDFs ship in `public/pdf/` and every page links its own original,
 so any transcription can be checked against the chart it came from.
@@ -209,12 +209,38 @@ reference**. The answer card renders that section through the same
 `<TopicSection>` the knowledge page uses, so chat answers and pages cannot drift
 apart.
 
-**A topic knows where it lives, and it is not always a knowledge page.** Most
-topics render at `/knowledge/:id`. Two do not: quick links has its own view, and
-awards is rendered end to end by the Uniform Information tool. Both say so with a
-`home` field, and `topicRoute()` reads it — which is one data field instead of a
-growing chain of `if (topicId === …)` in the router, the corpus, and the answer
-card's button label.
+**A topic knows where it lives, and it is usually not a knowledge page.** Seven
+of the twelve topics render somewhere other than `/knowledge/:id`: quick links
+has its own view, and six are rendered end to end by the tool that uses them.
+Each says so with a `home` field, and `topicRoute()` reads it — one data field
+instead of a growing chain of `if (topicId === …)` in the router, the corpus, and
+the answer card's button label.
+
+**The merge rule is "does the tool already show all of this", not "does a tool
+exist".** A knowledge page beside a tool covering the same ground is the same
+facts at two URLs, and the page is the copy that goes stale — so the page goes
+and the tool absorbs whatever it was not already rendering. That cost real work
+rather than a registry edit: the checklist's how-to procedures were only on the
+page (its rows *linked out* to them), and the EVAL calendar's coverage caveats
+were not on the tool at all. Both now render through `<TopicSection>`, the same
+component the chat answer card uses, against the same section objects.
+
+Ranks is the awkward one and worth reading before adding a seventh. Its six
+sections are the six services, and the explorer shows *one at a time behind a
+selector* — so a citation to `ranks#usmc` cannot be honoured by scrolling: the
+Marine Corps chart is not in the document until the selector says so. The
+citation therefore changes the selection, resolved by `lib/rankSelection.js`
+during setup rather than in `onMounted`, because `useCitedSection` looks for
+`#sec-usmc` one tick after mount and on a cold load that element only exists if
+the right service was already chosen.
+
+Six topics no longer having a page cost six static pages — the prerendered set
+went from 11 files to 7, and the rank charts were among the richest of them.
+That is a real SEO loss, taken deliberately: a second URL that exists only for
+crawlers is a page the app never links to and nobody maintains, which is the
+duplication this merge was removing. `/knowledge/<moved-topic>` still resolves —
+`KnowledgeView` redirects on `home` — so links shared while those pages existed
+land on the tool rather than on the catch-all.
 
 Awards moved there because precedence, the wear rules and the device legend are
 what you want in front of you *while* building a rack. Split across two URLs they

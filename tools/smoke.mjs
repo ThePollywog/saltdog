@@ -29,17 +29,19 @@ const ROUTES = [
   ["", "quick-reference desk"],
   ["#/quick-links", "Quick Links"],
   ["#/knowledge", "Knowledge"],
-  ["#/knowledge/reservist-checklist", "Readiness"],
-  ["#/knowledge/eval-fitrep?a=rules", "FITREP"],
-  ["#/knowledge/ranks", "Rank"],
   ["#/knowledge/combatant-commands", "Combatant"],
   ["#/knowledge/navy-fleets", "Fleet"],
   ["#/knowledge/joint-codes", "Joint"],
-  ["#/knowledge/phonetic-alphabet", "Phonetic"],
-  // Awards has no knowledge page any more — the uniform tool renders the whole
-  // topic, and so it does for uniform. The routes stay smoked because links to
-  // awards were shared before it moved, and what is asserted is that a
-  // /knowledge/ URL for a tool topic lands on the tool.
+  // SIX topics no longer have a knowledge page — their tool renders the whole
+  // topic. These routes stay smoked because links to them were shared while the
+  // pages existed, and what is asserted is that a /knowledge/ URL for a tool
+  // topic lands on the TOOL. The expectation is therefore the tool's heading,
+  // not a word the knowledge page would also have shown: matching "Rank" would
+  // have passed against the very page this redirect is supposed to have removed.
+  ["#/knowledge/reservist-checklist", "Readiness Checklist"],
+  ["#/knowledge/eval-fitrep?a=rules", "EVAL / FITREP Due Date"],
+  ["#/knowledge/ranks", "Rank Explorer"],
+  ["#/knowledge/phonetic-alphabet", "Phonetic Speller"],
   ["#/knowledge/awards", "Uniform Information"],
   ["#/knowledge/uniform", "Uniform Information"],
   // A line of the creed, not the topic title: this is the one page whose content
@@ -316,6 +318,27 @@ async function checkRoutes() {
  * The chat widget end to end: open, ask a question with a known answer, get a
  * cited card, follow the citation, land on the right section.
  */
+/**
+ * The question this check types, and where the retrieval library says it should
+ * land — resolved in Node, then asserted in the browser.
+ *
+ * Two things could diverge and this is the only place that would notice: the
+ * widget could stop honouring a record's route, or the route could move (as the
+ * checklist's did, onto its tool) while the check kept asserting the old one.
+ */
+const CHAT_QUESTION = "how many points do I need for a good year";
+const EXPECTED_CITATION = await (async () => {
+  const { buildCorpus } = await import("../src/lib/corpus.js");
+  const { ask } = await import("../src/lib/retrieval.js");
+  const result = ask(CHAT_QUESTION, buildCorpus());
+  if (result.kind !== "answer") {
+    throw new Error(`the chat check's question no longer answers (${result.kind})`);
+  }
+  const { route } = result.record;
+  const pathname = route.name === "tools" ? `/tools/${route.params.tool}` : `/knowledge/${route.params.topicId}`;
+  return { pathname, anchor: route.query.a };
+})();
+
 async function checkChat() {
   const problems = await withPage(`${BASE}/`, async (page) => {
     await page.waitFor('!!document.querySelector(".salt-fab")');
@@ -340,7 +363,7 @@ async function checkChat() {
     const typed = await page.evaluate(`(() => {
       const el = document.querySelector('[role="dialog"] input');
       if (!el) return false;
-      el.value = 'how many points do I need for a good year';
+      el.value = ${JSON.stringify(CHAT_QUESTION)};
       el.dispatchEvent(new Event('input', { bubbles: true }));
       return true;
     })()`);
@@ -354,8 +377,15 @@ async function checkChat() {
 
     // Match on the question text, not the "You asked" eyebrow: that label is
     // uppercased by CSS and innerText reports the transformed text.
+    //
+    // "open in " without naming the destination: the card labels that button
+    // with the topic's OWN home, so it reads "Open in Readiness Checklist" for
+    // this question and "Open in Knowledge" only for a topic that still has a
+    // knowledge page. Hardcoding "knowledge" made this check fail the moment the
+    // checklist moved to its tool, reporting "no answer appeared" for an answer
+    // that was on screen.
     const answered = await page.waitFor(
-      `/open in knowledge|MNCC/i.test(document.querySelector('[role="log"]').innerText)`,
+      `/open in |MNCC/i.test(document.querySelector('[role="log"]').innerText)`,
       8000,
     );
     if (!answered) {
@@ -374,7 +404,7 @@ async function checkChat() {
     // Follow the citation and confirm we land on the cited section, focused.
     const clicked = await page.evaluate(`(() => {
       const btns = [...document.querySelectorAll('[role="log"] a, [role="log"] button')];
-      const target = btns.find(b => /open in knowledge|open the card|view/i.test(b.innerText));
+      const target = btns.find(b => /open in |open the card|view/i.test(b.innerText));
       if (!target) return false;
       target.click();
       return true;
@@ -384,12 +414,24 @@ async function checkChat() {
       return;
     }
 
-    const landed = await page.waitFor(`location.hash.includes("/knowledge/")`, 6000);
-    if (!landed) page.fail("citation did not navigate to a knowledge route");
+    // Where it should land is DERIVED, by asking the same library the widget
+    // asks. A hardcoded "/knowledge/" passed only while every citable topic had
+    // a knowledge page; six of them are now rendered by their tool, and the one
+    // this question hits is among them. Deriving it means the assertion follows
+    // the data instead of having to be remembered.
+    const { pathname: wantPath, anchor: wantAnchor } = EXPECTED_CITATION;
+    const landed = await page.waitFor(
+      `location.hash.includes(${JSON.stringify(wantPath)})`,
+      6000,
+    );
+    if (!landed) {
+      const got = await page.evaluate("location.hash");
+      page.fail(`citation should have landed on ${wantPath}, got "${got}"`);
+    }
 
     const anchor = await page.evaluate("location.hash");
-    if (anchor && !anchor.includes("a=")) {
-      page.fail(`citation lost its section anchor: ${anchor}`);
+    if (anchor && !anchor.includes(`a=${wantAnchor}`)) {
+      page.fail(`citation lost its section anchor: expected a=${wantAnchor}, got "${anchor}"`);
     }
 
     const onSection = await page.waitFor(
@@ -991,7 +1033,9 @@ async function checkRibbonCitation() {
 async function checkFeedbackLinks() {
   const { FOOTER_LINKS, FORMS, SITE } = await import("../src/lib/feedback.js");
 
-  const problems = await withPage(`${BASE}/#/knowledge/ranks`, async (page) => {
+  // A route that is still a knowledge page: the point is to read the footer on a
+  // deep page, and a route that redirects would assert the wrong `where`.
+  const problems = await withPage(`${BASE}/#/knowledge/doctrine`, async (page) => {
     const read = async () =>
       JSON.parse(
         String(
@@ -1015,7 +1059,7 @@ async function checkFeedbackLinks() {
         page.fail(`feedback link names unknown template ${u.searchParams.get("template")}`);
       }
       if (u.searchParams.get("site") !== SITE) page.fail("feedback link does not name the site");
-      if (!String(u.searchParams.get("where")).includes("#/knowledge/ranks")) {
+      if (!String(u.searchParams.get("where")).includes("#/knowledge/doctrine")) {
         page.fail(`feedback link reports the wrong page: ${u.searchParams.get("where")}`);
       }
     }
@@ -1548,7 +1592,7 @@ async function checkGoRedirect() {
  * the whole design premise is reading the page alongside it.
  */
 async function checkExpandChat() {
-  const problems = await withPage(`${BASE}/#/knowledge/ranks`, async (page) => {
+  const problems = await withPage(`${BASE}/#/knowledge/doctrine`, async (page) => {
     await page.waitFor('!!document.querySelector(".salt-fab")');
     await page.evaluate('document.querySelector(".salt-fab").click()');
     if (!(await page.waitFor('!!document.querySelector(\'[role="dialog"]\')'))) {
@@ -1755,26 +1799,189 @@ async function checkAboutStorage() {
   record("about: stored-data panel lists entries and gates deletion", problems);
 }
 
+
+/**
+ * The four topics that moved from a knowledge page onto their tool.
+ *
+ * "All of it is on the tool now" is the entire claim of that merge and it is not
+ * self-enforcing: deleting a page is one line, and noticing that a procedure or
+ * a caveat quietly stopped being anywhere is nobody's job. So each topic's own
+ * data is read here and demanded on the rendered tool — the same shape as
+ * checkRibbonReference, for the same reason.
+ */
+async function checkMergedTopics() {
+  const flatten = (t) => String(t).replace(/\s+/g, " ").toLowerCase();
+
+  // --- checklist: the how-to procedures, which the rows used to link OUT to ---
+  const checklist = await import("../src/data/checklist.js");
+  const clProblems = await withPage(`${BASE}/#/tools/checklist`, async (page) => {
+    if (!(await page.waitFor('!!document.querySelector(\'input[type="checkbox"]\')', 8000))) {
+      page.fail("the checklist tool never rendered");
+      return;
+    }
+    const flat = flatten(await page.evaluate("document.body.innerText"));
+    const has = (s) => flat.includes(flatten(s));
+
+    for (const h of checklist.HOWTO) {
+      if (!has(h.heading)) page.fail(`how-to missing: ${h.heading}`);
+      for (const step of h.steps) {
+        if (!has(step)) page.fail(`step missing from "${h.heading}": "${String(step).slice(0, 50)}…"`);
+      }
+    }
+
+    // The links that used to leave for the knowledge page. A stale one still
+    // renders and still looks like a link; it just lands on the catch-all and
+    // dumps the reader on the home page.
+    const hrefs = JSON.parse(
+      String(
+        await page.evaluate(
+          "JSON.stringify([...document.querySelectorAll('main a')].map(a => a.getAttribute('href') || ''))",
+        ),
+      ),
+    );
+    const howtoLinks = hrefs.filter((h) => h.includes("a=howto-"));
+    if (!howtoLinks.length) page.fail("no row offers a how-to link any more");
+    for (const h of howtoLinks) {
+      if (!h.includes("/tools/checklist")) {
+        page.fail(`how-to link still points off the tool: ${h}`);
+      }
+    }
+  });
+  record("merged: the checklist carries its own procedures", clProblems);
+
+  // --- eval: the coverage caveats, which the tool never rendered before ---
+  const evalMod = await import("../src/data/evalCalendar.js");
+  const coverage = evalMod.default.sections.find((s) => s.id === "coverage");
+  const evProblems = await withPage(`${BASE}/#/tools/eval`, async (page) => {
+    if (!(await page.waitFor("!!document.querySelector('#sec-coverage')", 8000))) {
+      page.fail("the EVAL tool rendered without a coverage section at all");
+      return;
+    }
+    const flat = flatten(await page.evaluate("document.body.innerText"));
+    const has = (s) => flat.includes(flatten(s));
+    if (!has(coverage.heading)) page.fail(`coverage section missing: ${coverage.heading}`);
+    for (const row of coverage.rows) {
+      if (!has(row.k)) page.fail(`caveat missing: ${row.k}`);
+      if (!has(row.v)) page.fail(`caveat text missing for ${row.k}`);
+    }
+  });
+  record("merged: the EVAL tool carries the coverage caveats", evProblems);
+
+  // --- phonetic: both tables, every code word ---
+  const phonetic = await import("../src/data/phonetic.js");
+  const phProblems = await withPage(`${BASE}/#/tools/phonetic`, async (page) => {
+    // Wait for the TOOL, not for any `.salt-section`: the tools are lazy
+    // chunks, and the shell around them paints first. Reading innerText before
+    // the chunk mounts finds the nav and the page intro and calls every code
+    // word missing — which is what this check did on its first run.
+    if (!(await page.waitFor("document.querySelectorAll('#sec-letters table, #sec-digits table').length === 2", 8000))) {
+      page.fail("the speller's code-word tables never rendered");
+      return;
+    }
+    const flat = flatten(await page.evaluate("document.body.innerText"));
+    for (const row of [...phonetic.ALPHABET, ...phonetic.DIGITS]) {
+      if (!flat.includes(flatten(row.word))) page.fail(`code word missing: ${row.letter} -> ${row.word}`);
+    }
+  });
+  record("merged: the speller carries both code-word tables", phProblems);
+}
+
+/**
+ * A rank citation selects a service.
+ *
+ * The explorer shows ONE service behind a selector, so `?a=usmc` cannot be
+ * honoured by scrolling — this is the one merged topic where the citation
+ * changes what is rendered rather than where the page sits. Nothing in
+ * `node --test` can see it: the resolution is pure and tested in
+ * lib/rankSelection.js, but whether the component actually reads it is a
+ * question only a browser answers.
+ *
+ * It also carries the warrant-note rule, which used to be asserted against the
+ * prerendered ranks page. Print the note only where the service has no warrant
+ * tier: the Air Force has none and gets the sentence; the Coast Guard has
+ * W-2..W-4 and a note about the missing W-1/W-5, and must NOT show it, because
+ * the tier it explains is right there on screen.
+ */
+async function checkRankCitation() {
+  const { SERVICES } = await import("../src/data/ranks.js");
+  const byId = Object.fromEntries(SERVICES.map((s) => [s.id, s]));
+  const flatten = (t) => String(t).replace(/\s+/g, " ").toLowerCase();
+
+  const problems = await withPage(`${BASE}/#/tools/ranks?a=usmc`, async (page) => {
+    await page.waitFor("!!document.querySelector('.salt-insignia')", 8000);
+
+    // Cold load: the citation has to have been resolved during setup, or the
+    // anchor it wants to focus does not exist yet.
+    const heading = String(await page.evaluate("document.querySelector('#sec-usmc h3')?.textContent ?? ''"));
+    if (!heading.includes("Marine Corps")) {
+      page.fail(`?a=usmc did not select the Marine Corps (heading was "${heading}")`);
+    }
+    const focused = String(await page.evaluate("document.activeElement?.id ?? ''"));
+    if (focused !== "sec-usmc") page.fail(`citation did not move focus to the service (focus was "${focused}")`);
+
+    // A Marine-only title proves the TABLE followed the selector, not just the
+    // heading — the failure mode is a heading that updates over a stale table.
+    const flat = flatten(await page.evaluate("document.body.innerText"));
+    if (!flat.includes("gunnery sergeant")) page.fail("the Marine Corps table did not render");
+    if (flat.includes("master chief petty officer")) {
+      page.fail("the Navy table is still on screen under a Marine Corps heading");
+    }
+
+    // In-app navigation, not a reload: the watcher is a separate code path from
+    // the setup-time resolution above and only this exercises it.
+    await page.evaluate('location.hash = "/tools/ranks?a=usaf"');
+    await page.waitFor(
+      "document.querySelector('#sec-usaf h3')?.textContent?.includes('Air Force') === true",
+      8000,
+    );
+    const af = flatten(await page.evaluate("document.body.innerText"));
+    if (!af.includes(flatten(byId.usaf.warrantNote))) {
+      page.fail("the Air Force warrant note is not shown, and it has no warrant tier");
+    }
+
+    await page.evaluate('location.hash = "/tools/ranks?a=uscg"');
+    await page.waitFor(
+      "document.querySelector('#sec-uscg h3')?.textContent?.includes('Coast Guard') === true",
+      8000,
+    );
+    const cg = flatten(await page.evaluate("document.body.innerText"));
+    if (cg.includes(flatten(byId.uscg.warrantNote))) {
+      page.fail("the Coast Guard warrant note is shown, but the tier it explains is populated");
+    }
+    if (!cg.includes("chief warrant officer")) {
+      page.fail("the Coast Guard warrant tier did not render");
+    }
+  });
+  record("merged: a rank citation selects its service, and the warrant note obeys the rule", problems);
+}
+
 /* -------------------------------------------------------------------- main */
 
 /**
  * The static reference pages, as actually built and served.
  *
  * verify-corpus proves what the generator RETURNS. It cannot prove that vite
- * emitted those bytes to those paths, that the sprite sheet the rewritten
- * `url(../../img/…)` points at is in dist/ at all, or that a page whose every
- * asset 404s still returns 200 and looks fine at a glance — which it does. That
- * last one is the whole reason this runs in a browser: a wrong `../` count is
- * invisible in the markup, invisible in the tests, and invisible on the page
- * except that the insignia column is empty.
+ * emitted those bytes to those paths, that the stylesheet a nested page reaches
+ * through `../../` is in dist/ at all, or that a page whose every asset 404s
+ * still returns 200 and looks fine at a glance — which it does. That last one is
+ * the whole reason this runs in a browser: a wrong `../` count is invisible in
+ * the markup, invisible in the tests, and invisible on the page except that it
+ * renders unstyled.
+ *
+ * No page here carries a sprite any more. The rank charts were the only
+ * prerendered sprite, and they moved to the rank explorer with the topic; the
+ * app-side sprite check above is where that coverage lives now.
  */
 async function checkStaticPages() {
   const PAGES = [
     ["knowledge/", "Navy reference cards"],
     ["quick-links/", "Navy System Quick Links"],
-    ["knowledge/ranks/", "Master Chief Petty Officer"],
     ["knowledge/doctrine/", "I am a United States Sailor."],
     ["knowledge/directives/", "BUPERSINST"],
+    // A five-column table page, which is what the depth-prefix and the
+    // horizontal-overflow assertions below are really aimed at now that the rank
+    // charts are not prerendered.
+    ["knowledge/joint-codes/", "Manpower"],
   ];
 
   for (const [path, expect] of PAGES) {
@@ -1842,31 +2049,6 @@ async function checkStaticPages() {
     record(`static: /${path} paints with no JavaScript`, problems);
   }
 
-  // The payoff case, spelled out: the rank insignia are CSS background sprites
-  // positioned out of one PNG, and the URL in that background shorthand is the
-  // one path on these pages that is rewritten rather than written.
-  const sprites = await withPage(`${BASE}/knowledge/ranks/`, async (page) => {
-    await page.waitFor('document.querySelectorAll(".insignia").length > 0');
-    const bad = await page.evaluate(`(async () => {
-      const els = [...document.querySelectorAll(".insignia")];
-      const urls = new Set();
-      for (const el of els) {
-        const m = /url\\((?:"|')?([^"')]+)/.exec(getComputedStyle(el).backgroundImage || "");
-        if (m) urls.add(new URL(m[1], location.href).href);
-      }
-      if (!urls.size) return "no .insignia element has a background image";
-      for (const u of urls) {
-        const res = await fetch(u);
-        if (!res.ok) return u + " -> " + res.status;
-        const blob = await res.blob();
-        if (blob.size < 1000) return u + " is only " + blob.size + " bytes";
-      }
-      return "";
-    })()`);
-    if (bad) page.fail(bad);
-  });
-  record("static: rank insignia sprites resolve through the rewritten prefix", sprites);
-
   // The sitemap the build wrote, fetched as a crawler would.
   const sitemap = await withPage(`${BASE}/sitemap.xml`, async (page) => {
     const xml = await page.evaluate(`(async () => (await fetch("${BASE}/sitemap.xml")).text())()`);
@@ -1916,6 +2098,8 @@ try {
   await checkFeedbackLinks();
   await checkRibbonReference();
   await checkRibbonCitation();
+  await checkMergedTopics();
+  await checkRankCitation();
   await checkStaticPages();
 } finally {
   // Kill both even if a check threw, or the run leaves a Chrome and a vite

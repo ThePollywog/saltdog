@@ -81,8 +81,11 @@ export default {
     "radio",
     "alpha bravo charlie",
   ],
-  toolRoute: { name: "tools", params: { tool: "phonetic" } },
-  toolLabel: "Spell a word",
+  // Rendered by the speller, not by a knowledge page. The letter and numeral
+  // tables ARE the tool's lower half — a second URL showing the same two tables
+  // was the duplication, not a second audience.
+  home: { name: "tools", params: { tool: "phonetic" } },
+  homeLabel: "Phonetic Speller",
   sections: [
     {
       id: "letters",

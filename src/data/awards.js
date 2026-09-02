@@ -398,11 +398,6 @@ const GROUP_LABEL = new Map(GROUPS.map((g) => [g.id, g.label]));
  * built from topics, and the chat answer card renders these `section` objects
  * directly: the calculator and a cited answer stay identical by construction,
  * which is the same guarantee the knowledge pages have.
- *
- * There is deliberately no `toolRoute` here. That field means "the interactive
- * version of this reference lives elsewhere"; for this topic the tool IS where
- * it lives, and a second button pointing at the page you are already on is
- * noise.
  */
 export default {
   id: "awards",

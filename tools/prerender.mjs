@@ -45,7 +45,6 @@
 import { PAGE_TOPICS } from "../src/data/index.js";
 import { viaLabel, systemsFor } from "../src/data/systems.js";
 import { directiveUrl, directivesFor, display, libraryName } from "../src/data/directives.js";
-import { insigniaStyle } from "../src/lib/insignia.js";
 
 /** Absolute origin, for canonicals and the sitemap. Nothing else may hardcode it. */
 export const ORIGIN = "https://thepollywog.github.io";
@@ -53,7 +52,6 @@ export const ORIGIN = "https://thepollywog.github.io";
 /** Where the app is deployed under that origin. */
 export const BASE_PATH = "/saltdog/";
 
-const NO_REPORTS = "— no reports due —";
 
 // ---------------------------------------------------------------------------
 // escaping and small helpers
@@ -77,24 +75,6 @@ export const esc = (v) =>
     .replace(/'/g, "&#39;");
 
 const lines = (...xs) => xs.filter(Boolean).join("\n");
-
-/**
- * An inline style object from insigniaStyle, as a CSS declaration
- * string, with the sprite sheet's URL re-based.
- *
- * Both helpers return `url(./img/…)`, which is correct for a document at the app
- * root and wrong for one at `knowledge/ranks/` — `./` is relative to the
- * DOCUMENT, so it would resolve to `knowledge/ranks/img/ranks.png`. The sprite
- * maths stays in lib/ where the app's own copy lives; only the prefix moves.
- */
-export function styleAttr(styleObject, prefix) {
-  return Object.entries(styleObject)
-    .map(([k, v]) => {
-      const prop = k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-      return `${prop}: ${String(v).replace(/url\(\.\//g, `url(${prefix}`)}`;
-    })
-    .join("; ");
-}
 
 // ---------------------------------------------------------------------------
 // paths
@@ -226,22 +206,6 @@ ${(s.rows ?? [])
   .join("\n")}
       </ul>`,
 
-  // Read-only here, exactly as in the app: the tickable version is a tool, and a
-  // checkbox on a static page would be a control that forgets.
-  checklist: (s) =>
-    `      <ul class="rows">
-${(s.rows ?? [])
-  .map(
-    (i) => `        <li>
-          <p><span class="box" aria-hidden="true">▢</span> ${esc(i.label)}</p>
-${i.note ? `          <p class="dim">${esc(i.note)}</p>` : ""}
-${i.systems?.length ? `          ${systemLinks(i.systems)}` : ""}
-${i.refs?.length ? `          ${refs(i.refs)}` : ""}
-        </li>`,
-  )
-  .join("\n")}
-      </ul>`,
-
   steps: (s) =>
     `      <ol>
 ${(s.rows ?? []).map((step) => `        <li>${esc(step)}</li>`).join("\n")}
@@ -274,106 +238,6 @@ ${(s.rows ?? [])
   )
   .join("\n")}
       </div>`,
-
-  // Months with no reports are named, never left blank — a blank cell reads as
-  // missing data rather than as a fact about the month.
-  "eval-schedule": (s) =>
-    table(
-      [
-        { key: "month", title: "Month", mono: true },
-        { key: "officer", title: "Officer (FITREP)" },
-        { key: "enlisted", title: "Enlisted (EVAL)" },
-      ],
-      s.rows ?? [],
-      "Reporting month by paygrade",
-      (key, row) => {
-        if (key !== "officer" && key !== "enlisted") return null;
-        const v = row[key];
-        return v.length ? `<span class="mono">${esc(v.join(", "))}</span>` : esc(NO_REPORTS);
-      },
-    ),
-
-  phonetic: (s) =>
-    table(
-      [
-        { key: "letter", title: "Char", mono: true },
-        { key: "word", title: "Code word" },
-      ],
-      s.rows ?? [],
-      "Phonetic code words",
-    ),
-
-  /**
-   * One service, all tiers. `rows` is a service OBJECT here, not an array —
-   * the one section kind where that is true.
-   *
-   * The insignia sprite is decoration and carries no alt text: the grade and the
-   * title are in the neighbouring cells, so describing it would make a screen
-   * reader read every rank twice. E-1 gets an em-dash, because the source chart's
-   * own answer is the words "No Insignia" and an empty cell would read as a hole
-   * in the transcription.
-   */
-  ranks: (s, { prefix }) => {
-    const svc = s.rows ?? {};
-    const flat = [];
-    for (const [tier, label] of [
-      ["officer", "Officer"],
-      ["warrant", "Warrant"],
-      ["enlisted", "Enlisted"],
-    ]) {
-      for (const r of svc[tier] ?? []) flat.push({ ...r, tier: label });
-    }
-
-    const t = table(
-      [
-        { key: "tier", title: "Tier" },
-        { key: "grade", title: "Grade", mono: true },
-        { key: "insignia", title: "Insignia" },
-        { key: "title", title: "Title" },
-        { key: "abbr", title: "Abbr.", mono: true },
-      ],
-      flat,
-      // Not "<service> ranks by paygrade": the <h2> directly above already says
-      // the service, and the ordering is the one thing about this table that is
-      // not obvious — it runs officer, warrant, enlisted, which is not the order
-      // the paygrade numbers suggest.
-      "Officer, then warrant, then enlisted — ascending within each tier",
-      (key, row) => {
-        if (key === "insignia") {
-          const style = insigniaStyle(svc.id, row, 44);
-          return style
-            ? `<span class="insignia" style="${esc(styleAttr(style, prefix))}" role="presentation"></span>`
-            : '<span class="dim" aria-hidden="true">—</span>';
-        }
-        if (key === "title" && row.corrected) {
-          return `${esc(row.title)} <sup title="${esc(row.corrected)}">†</sup>`;
-        }
-        return null;
-      },
-    );
-
-    return lines(
-      t,
-      !svc.warrant?.length && svc.warrantNote
-        ? `      <p class="note">${esc(svc.warrantNote)}</p>`
-        : "",
-      svc.seniorEnlisted
-        ? `      <p><span class="eyebrow">Senior enlisted advisor</span> ${esc(svc.seniorEnlisted)}</p>`
-        : "",
-      svc.wartime
-        ? `      <p><span class="eyebrow">Wartime / special grade</span> ${esc(svc.wartime)}</p>`
-        : "",
-      ...flat
-        .filter((r) => r.corrected)
-        .map((r) => `      <p class="dim small">† ${esc(r.grade)}: ${esc(r.corrected)}</p>`),
-      // The topic-level PDF button offers usn-ranks.pdf only, which on a page
-      // showing all six services names the wrong chart five times out of six.
-      // Each service carries the chart it was transcribed from, so link it here.
-      svc.sourcePdf
-        ? `      <p class="small"><a href="${prefix}pdf/${esc(svc.sourcePdf)}" download>Download the ${esc(s.heading)} chart (PDF)</a></p>`
-        : "",
-    );
-  },
 
   /**
    * The map itself is NOT drawn here. It is 46 KB of projected path data behind an
@@ -556,7 +420,6 @@ const STYLE = `      :root {
       ul.rows > li { border-bottom: 1px solid var(--line); padding: 12px 0; }
       ul.rows > li > p:last-child { margin-bottom: 0; }
       .row-head { font-weight: 600; }
-      .box { opacity: 0.5; }
       .tag {
         font-size: 0.65rem; letter-spacing: 0.08em; border: 1px solid var(--line);
         padding: 1px 6px; border-radius: 2px; color: var(--dim); vertical-align: 1px;
@@ -586,7 +449,6 @@ const STYLE = `      :root {
       th, td { text-align: start; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
       th { color: var(--dim); font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
       tbody tr:hover { background: var(--surface); }
-      .insignia { display: inline-block; }
       nav.siblings { border-top: 1px solid var(--line); padding: 22px 0 0; margin-top: 8px; }
       nav.siblings ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px 20px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
       footer { border-top: 1px solid var(--line); margin-top: 26px; padding: 20px 0 40px; color: var(--dim); font-size: 0.88rem; }

@@ -5,11 +5,14 @@
  * No new components, no new routes.
  *
  * A topic module default-exports `{ id, title, eyebrow, blurb, sourcePdf,
- * keywords, sections[] }` plus four optional fields: `note` (the caveat alert),
- * `toolRoute`/`toolLabel` (the interactive version of the same material),
+ * keywords, sections[] }` plus three optional fields: `note` (the caveat alert),
  * `systems` — ids from data/systems.js for the applications this topic is about,
  * rendered as a link row under the header — and `home`/`homeLabel`, for a topic
  * that is indexed for search but rendered somewhere other than a knowledge page.
+ *
+ * There is no longer a `toolRoute`/`toolLabel` pair. It meant "the same material
+ * also exists as a tool", and every topic that could say that has since moved to
+ * the tool outright — the field described a duplication rather than a feature.
  * Omit `systems` when there is nothing to log into: the phonetic alphabet and the
  * fleet list are reference, not tasks, and a button there would have to point
  * somewhere invented.
@@ -30,24 +33,24 @@ import directives from "./directives.js";
 /**
  * Knowledge topics, in the order they appear in nav and on the index page.
  *
+ * What is left here is the material with nothing to interact with: things you
+ * read, not things you compute. Every topic that had a tool doing the same job
+ * moved to TOOL_TOPICS below, because two URLs for one body of facts is a
+ * maintenance burden that buys no second audience.
+ *
+ * Doctrine leads: it is the "things you are expected to have memorized" topic,
+ * and it reads as an introduction to the three organizational topics (COCOMs,
+ * fleets, J-codes) that follow it as one unbroken run.
+ *
  * Directives is last on purpose. It is the topic people arrive at from a
  * citation chip rather than by browsing, and putting the authorities above the
  * material they authorize would front-load the driest page on the site.
- *
- * Doctrine sits next to ranks, because the two answer the same kind of question —
- * things you are expected to have memorized rather than things you look up — and
- * keeping them together leaves the three organizational topics (COCOMs, fleets,
- * J-codes) as one unbroken run.
  */
 export const TOPICS = [
-  checklist,
-  evalCalendar,
-  ranks,
   doctrine,
   cocoms,
   fleets,
   jointCodes,
-  phonetic,
   directives,
 ];
 
@@ -57,18 +60,23 @@ export const QUICKLINKS_TOPIC = quicklinks;
 /**
  * Topics rendered by a tool rather than by a knowledge page.
  *
- * Awards is here because precedence, the wear rules and the device legend are
- * all things you want in front of you WHILE building a rack, not on a separate
- * page you have to hold in your head. The calculator renders every one of its
- * sections, so a knowledge page would have been the same material at a second
- * URL — which is the duplication, not a second audience. Uniform is here for the
- * same reason and lands on the same tool: what governs a warfare device is the
- * same question as what governs a ribbon, asked one tab over.
+ * The test for membership is not "does a tool exist" but "does the tool already
+ * show all of this". Awards was the first: precedence, the wear rules and the
+ * device legend are things you want in front of you WHILE building a rack, not
+ * on a separate page you have to hold in your head, and the calculator renders
+ * every one of its sections — so a knowledge page was the same material at a
+ * second URL. Uniform lands on the same tool for the same reason.
+ *
+ * The other four followed once their tools rendered every section they own:
+ * the checklist's how-to procedures, the eval calendar's coverage caveats, the
+ * six rank charts behind the explorer's selector, and the speller's two tables.
+ * Each of those was a knowledge page whose entire content the tool already
+ * duplicated or has since absorbed.
  *
  * They are indexed and citable exactly like a knowledge topic; the only
  * difference is `home`, which sends every route and citation to the tool.
  */
-export const TOOL_TOPICS = [awards, uniform];
+export const TOOL_TOPICS = [checklist, evalCalendar, ranks, phonetic, awards, uniform];
 
 /**
  * Topics that get a page of their own — the nav, the knowledge index, and the

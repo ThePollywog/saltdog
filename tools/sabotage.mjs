@@ -580,14 +580,6 @@ const MUTATIONS = [
   // These renderers are a second implementation of TopicSection.vue, so the
   // mutations here are mostly "the copy quietly says less than the original".
   {
-    // The failure the SECTION_RENDERERS design exists to make loud: a kind in the
-    // data with nothing to render it.
-    file: "tools/prerender.mjs",
-    find: "  phonetic: (s) =>",
-    repl: "  phonetics: (s) =>",
-    breaks: "every section kind in the data has a renderer",
-  },
-  {
     // ...and the same defect with the throw defanged, which is how it would ship
     // as a blank section instead of a red build.
     file: "tools/prerender.mjs",
@@ -602,28 +594,17 @@ const MUTATIONS = [
     breaks: "emits one page per topic",
   },
   {
-    // A table loses a column. The page still renders, still has every row, and
-    // reads as complete unless you happen to know the chart.
-    file: "tools/prerender.mjs",
-    find: '        { key: "abbr", title: "Abbr.", mono: true },',
-    repl: "",
-    breaks: "every string in the data reaches the page",
-  },
-  {
-    // A row-level field stops being printed. This is the checklist note, the
-    // sentence that says WHY the item is on the list.
-    file: "tools/prerender.mjs",
-    find: '${i.note ? `          <p class="dim">${esc(i.note)}</p>` : ""}',
-    repl: "",
-    breaks: "every string in the data reaches the page",
-  },
-  {
     // A data field is renamed and the exemption that covered it now covers
     // nothing — the state in which the coverage test has a hole and looks fine.
-    file: "src/data/checklist.js",
-    find: "  cadence:",
-    repl: "  cadenceLabel:",
-    count: 7,
+    //
+    // Aimed at `directives`, not at the checklist: DATA_PATHS is built from
+    // PAGE_TOPICS, and the checklist stopped being one when it moved onto its
+    // tool. A mutation to a field no prerendered topic has is a mutation the
+    // coverage test cannot see, which is what this one had quietly become.
+    file: "src/data/directives.js",
+    find: "    library:",
+    repl: "    libraryId:",
+    count: 18,
     breaks: "no exemption in NOT_PRINTED is stale",
   },
   {
@@ -642,14 +623,6 @@ const MUTATIONS = [
     find: "      const label = esc(display(d));",
     repl: "      const label = esc(d.label);",
     breaks: "resolved by a lookup",
-  },
-  {
-    // Print the warrant note unconditionally, which diverges from the app on
-    // exactly one of six services.
-    file: "tools/prerender.mjs",
-    find: "      !svc.warrant?.length && svc.warrantNote",
-    repl: "      svc.warrantNote",
-    breaks: "warrant note is withheld exactly where the app withholds it",
   },
   {
     file: "tools/prerender.mjs",
@@ -694,20 +667,6 @@ const MUTATIONS = [
     find: '  return "../".repeat(pagePath.split("/").length - 1);',
     repl: '  return "../";',
     breaks: "relative prefixes match the depth",
-  },
-  {
-    // Stop rewriting url(./img/…). The sprite sheet then resolves against the
-    // document, so every insignia and every ribbon 404s on a nested page.
-    file: "tools/prerender.mjs",
-    find: "String(v).replace(/url\\(\\.\\//g, `url(${prefix}`)",
-    repl: "String(v)",
-    breaks: "relative prefixes match the depth",
-  },
-  {
-    file: "tools/prerender.mjs",
-    find: '<a href="${prefix}pdf/${esc(svc.sourcePdf)}" download>',
-    repl: '<a href="${prefix}pdfs/${esc(svc.sourcePdf)}" download>',
-    breaks: "every local reference resolves to something that exists",
   },
   {
     file: "tools/prerender.mjs",
@@ -785,11 +744,94 @@ const MUTATIONS = [
   //
   // Awards has no page of its own; the Uniform Information tool renders the whole
   // topic. Everything below is a way for that to come apart quietly.
+
+  // -------------------------------------------------------------------------
+  // The four topics that moved from a knowledge page onto their tool.
+  //
+  // The merge's claim is "the tool shows all of it, so the page was a duplicate".
+  // Every way below is a way for that to stop being true while the site looks
+  // finished.
+  {
+    // Put the checklist back on the knowledge index: a card, a route and a
+    // static page reappear for material the tool already renders in full.
+    file: "src/data/index.js",
+    find: "export const TOOL_TOPICS = [checklist, evalCalendar, ranks, phonetic, awards, uniform];",
+    repl: "export const TOOL_TOPICS = [evalCalendar, ranks, phonetic, awards, uniform];\nTOPICS.unshift(checklist);",
+    breaks: "a tool topic gets no static page and no knowledge card",
+  },
+  {
+    // The hosting table and the registry disagree — the state where a topic has
+    // moved in one place and not the other.
+    file: "src/data/index.js",
+    find: "export const TOOL_TOPICS = [checklist, evalCalendar, ranks, phonetic, awards, uniform];",
+    repl: "export const TOOL_TOPICS = [evalCalendar, ranks, phonetic, awards, uniform];",
+    breaks: "every topic with a tool for its subject is hosted by that tool",
+  },
+  {
+    // A topic homed on the wrong tool. Every citation to it then lands on a page
+    // that does not render it, which no route test would notice — both are real
+    // tools and both render something.
+    file: "src/data/evalCalendar.js",
+    find: '  home: { name: "tools", params: { tool: "eval" } },',
+    repl: '  home: { name: "tools", params: { tool: "points" } },',
+    breaks: "every topic with a tool for its subject is hosted by that tool",
+  },
+  {
+    // The label the answer card prints in "Open in ___". Wrong here and the chat
+    // offers to open the checklist in the rank explorer.
+    file: "src/data/checklist.js",
+    find: '  homeLabel: "Readiness Checklist",',
+    repl: '  homeLabel: "Rank Explorer",',
+    breaks: "the answer card's destination label is never invented",
+  },
+  {
+    // Reintroduce the retired field. It renders nothing now — the plumbing went
+    // when the last topic that used it moved — so the button silently does not
+    // appear and the topic looks like it simply has no tool.
+    file: "src/data/phonetic.js",
+    find: '  homeLabel: "Phonetic Speller",',
+    repl: '  homeLabel: "Phonetic Speller",\n  toolRoute: { name: "tools", params: { tool: "phonetic" } },',
+    breaks: "the retired toolRoute field is not reintroduced",
+  },
+  {
+    // A rank citation stops resolving: `?a=usmc` selects nothing, the explorer
+    // opens on the Navy, and the anchor the citation wants to focus is not on
+    // the page at all.
+    file: "src/lib/rankSelection.js",
+    find: "  return ids.includes(a) ? a : null;",
+    repl: "  return null;",
+    breaks: "a rank citation resolves to the service it names",
+  },
+  {
+    // The other direction: every `?a=` value is treated as a service, so a
+    // citation to `sec-officer` selects a service that does not exist.
+    file: "src/lib/rankSelection.js",
+    find: "  return ids.includes(a) ? a : null;",
+    repl: "  return a ?? null;",
+    breaks: "a rank citation resolves to the service it names",
+  },
+  {
+    // The selection wins over the citation — the reading that makes every
+    // citation a no-op, because a selector always has something selected.
+    file: "src/lib/rankSelection.js",
+    find: "  return citedService(query, ids) ?? current;",
+    repl: "  return current ?? citedService(query, ids);",
+    breaks: "a rank citation resolves to the service it names",
+  },
+  {
+    // The Coast Guard's note explains grades that ARE on screen. Print it
+    // whenever it exists and one service in six says something false.
+    file: "src/data/ranks.js",
+    find: "    warrantNote:",
+    repl: "    warrantNoteText:",
+    count: 3,
+    breaks: "the fixture that makes the warrant-note rule testable still exists",
+  },
   {
     // Put awards back on the knowledge index and it gets a card, a route, and a
     // static page — the duplication the merge removed, re-created in one line.
     file: "src/data/index.js",
-    find: "export const TOOL_TOPICS = [awards, uniform];",
+    find: "export const TOOL_TOPICS = [checklist, evalCalendar, ranks, phonetic, awards, uniform];",
     repl: "export const TOOL_TOPICS = [uniform];\nTOPICS.push(awards);",
     breaks: "a tool topic gets no static page and no knowledge card",
   },
@@ -855,7 +897,7 @@ const MUTATIONS = [
     repl:
       '  systems: ["ndaws", "nsips"],\n' +
       '  toolRoute: { name: "tools", params: { tool: "ribbons" } },',
-    breaks: "does not also advertise a tool",
+    breaks: "the retired toolRoute field is not reintroduced",
   },
   {
     // The failure this is really about: the calculator looks its sections up by
@@ -940,7 +982,7 @@ const MUTATIONS = [
   {
     // Unregister the topic: rendered on the page, absent from search.
     file: "src/data/index.js",
-    find: "export const TOOL_TOPICS = [awards, uniform];",
+    find: "export const TOOL_TOPICS = [checklist, evalCalendar, ranks, phonetic, awards, uniform];",
     repl: "export const TOOL_TOPICS = [awards];",
     breaks: "both hosted topics are registered",
   },

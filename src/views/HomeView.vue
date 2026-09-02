@@ -36,7 +36,10 @@ const CARDS = [
     icon: mdiBookOpenPageVariantOutline,
     eyebrow: "Reference",
     title: "Knowledge",
-    body: `${TOPICS.length} reference cards as searchable tables: the annual checklist, EVAL/FITREP calendar, ranks for all six services, ribbon precedence, combatant commands, fleets, J-codes, and the phonetic alphabet.`,
+    // Only what still has a page here. Six topics moved onto the tool that
+    // renders them, and a card promising ranks and ribbons behind "Knowledge"
+    // would send people to the one place those are no longer kept.
+    body: `${TOPICS.length} reference cards as searchable tables: doctrine and customs, combatant commands, Navy fleets, joint staff codes, and the instructions behind all of it.`,
     cta: "Open knowledge",
   },
   {
@@ -44,7 +47,10 @@ const CARDS = [
     icon: mdiToolboxOutline,
     eyebrow: "Interactive",
     title: "Readiness Tools",
-    body: `${TOOLS.length} planning aids: track your checklist, look up when your EVAL or FITREP is due, count retirement points toward a good year, and build a ribbon rack in precedence order. Saved in this browser only.`,
+    // Each of these now carries its own reference material as well as its
+    // calculator — the ranks, the ribbons, the code words and the procedures are
+    // all on the tool that uses them.
+    body: `${TOOLS.length} planning aids, each carrying the reference it works from: the annual checklist and its procedures, EVAL/FITREP due dates, retirement points, ranks for all six services, ribbon precedence and uniform placement, and the phonetic alphabet. Saved in this browser only.`,
     cta: "Open tools",
   },
 ];

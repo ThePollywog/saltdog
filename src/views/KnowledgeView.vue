@@ -8,7 +8,6 @@
  */
 import { computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { mdiArrowRight } from "@mdi/js";
 import TopicSection from "../components/common/TopicSection.vue";
 import PdfButton from "../components/common/PdfButton.vue";
 import SystemLinks from "../components/common/SystemLinks.vue";
@@ -79,15 +78,6 @@ watch(
           :describes="topic.title"
           label="Original PDF"
         />
-        <v-btn
-          v-if="topic.toolRoute"
-          :to="topic.toolRoute"
-          :append-icon="mdiArrowRight"
-          variant="tonal"
-          size="small"
-        >
-          {{ topic.toolLabel || "Open the tool" }}
-        </v-btn>
       </div>
 
       <!--

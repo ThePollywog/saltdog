@@ -45,14 +45,6 @@ const FALLBACK_SYSTEMS = ["mynavy-hr", "mnp", "mncc"];
           :describes="result.record.topicTitle"
           label="PDF"
         />
-        <v-btn
-          v-if="result.record.toolRoute"
-          size="small"
-          variant="text"
-          @click="emit('navigate', { route: result.record.toolRoute })"
-        >
-          {{ result.record.toolLabel || 'Open tool' }}
-        </v-btn>
       </div>
 
       <p v-if="result.record.note" class="text-caption mb-0" style="opacity: 0.72">

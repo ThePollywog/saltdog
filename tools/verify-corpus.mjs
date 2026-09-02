@@ -25,6 +25,7 @@ import { describe, it } from "node:test";
 import { buildCorpus } from "../src/lib/corpus.js";
 import { ANSWER_THRESHOLD, ask, search } from "../src/lib/retrieval.js";
 import { ALL_ITEM_IDS } from "../src/data/checklist.js";
+import { citedService, serviceToShow } from "../src/lib/rankSelection.js";
 import {
   ALL_TOPICS,
   PAGE_TOPICS,
@@ -2307,21 +2308,57 @@ describe("topic homes", () => {
     }
   });
 
-  it("a topic that is already its own home does not also advertise a tool", () => {
-    // `toolRoute` means "the interactive version lives elsewhere". On a topic
-    // whose home IS that tool it renders a second button pointing at the page
-    // you are reading.
+  it("the retired toolRoute field is not reintroduced", () => {
+    // `toolRoute`/`toolLabel` meant "the interactive version of this reference
+    // lives elsewhere", and rendered a second button to it. Every topic that
+    // could say that has since moved to its tool outright, so the plumbing in
+    // corpus.js, KnowledgeView and AnswerCard is gone. A topic setting the field
+    // now would silently do nothing, which is worse than the duplication was.
     for (const t of ALL_TOPICS) {
-      if (t.home?.name === "tools") {
-        assert.equal(t.toolRoute, undefined, `${t.id} declares both a tool home and a toolRoute`);
-      }
+      assert.equal(t.toolRoute, undefined, `${t.id} declares a retired toolRoute`);
+      assert.equal(t.toolLabel, undefined, `${t.id} declares a retired toolLabel`);
+    }
+    for (const rec of buildCorpus().records) {
+      assert.ok(!("toolRoute" in rec), `${rec.id} still carries toolRoute into the corpus`);
+    }
+  });
+
+  it("every topic with a tool for its subject is hosted by that tool", () => {
+    // The merge rule: a topic does NOT get a knowledge page when a tool renders
+    // the same material. Stated as data so adding a seventh tool topic cannot
+    // quietly leave a duplicate page behind.
+    const HOSTED_BY = {
+      "reservist-checklist": "checklist",
+      "eval-fitrep": "eval",
+      ranks: "ranks",
+      "phonetic-alphabet": "phonetic",
+      awards: "ribbons",
+      uniform: "ribbons",
+    };
+    assert.deepEqual(
+      TOOL_TOPICS.map((t) => t.id).sort(),
+      Object.keys(HOSTED_BY).sort(),
+      "TOOL_TOPICS and the expected hosting table disagree",
+    );
+    for (const [topicId, tool] of Object.entries(HOSTED_BY)) {
+      assert.equal(
+        TOPIC_BY_ID.get(topicId).home.params.tool,
+        tool,
+        `${topicId} is hosted by the wrong tool`,
+      );
     }
   });
 
   it("topicRoute sends every topic to its own home", () => {
-    assert.deepEqual(topicRoute("ranks", "usn"), {
+    assert.deepEqual(topicRoute("doctrine", "creed"), {
       name: "knowledge",
-      params: { topicId: "ranks" },
+      params: { topicId: "doctrine" },
+      query: { a: "creed" },
+    });
+    // A topic that moved to a tool routes to the tool, not to a dead page.
+    assert.deepEqual(topicRoute("ranks", "usn"), {
+      name: "tools",
+      params: { tool: "ranks" },
       query: { a: "usn" },
     });
     assert.deepEqual(topicRoute("quicklinks", "personnel"), {
@@ -2338,7 +2375,9 @@ describe("topic homes", () => {
   });
 
   it("the answer card's destination label is never invented", () => {
-    assert.equal(topicHomeLabel("ranks"), "Knowledge");
+    assert.equal(topicHomeLabel("doctrine"), "Knowledge");
+    assert.equal(topicHomeLabel("ranks"), "Rank Explorer");
+    assert.equal(topicHomeLabel("reservist-checklist"), "Readiness Checklist");
     assert.equal(topicHomeLabel("quicklinks"), "Quick Links");
     assert.equal(topicHomeLabel("awards"), "Uniform Information");
     assert.equal(topicHomeLabel("uniform"), "Uniform Information");
@@ -3351,25 +3390,15 @@ const NOT_PRINTED = new Map([
   ["kind", "selects the renderer"],
   ["keywords[]", "search index only; corpus.js weights them 2.5x and printing them would be keyword stuffing"],
   ["refs[]", "directive ids, resolved to their labels by refs()"],
-  ["systems[]", "system ids, resolved to names and URLs by systemLinks()"],
-  ["cadence", "consumed by lib/due.js as the due-date reason line; TopicSection does not print it either"],
   ["columns[].key", "the row property name, not a caption"],
   ["map.label", "the map SVG's aria-label, and these pages do not draw the map"],
   ["rows[].id", "stable key for persistence and citations"],
   ["rows[].group", "resolved to the group label, which IS printed"],
-  ["rows[].refs[]", "directive ids, resolved by refs()"],
   ["rows[].keywords[]", "search index only"],
-  ["rows[].systems[]", "system ids, resolved to names and URLs by systemLinks()"],
-  ["rows[].howto", "id of the how-to section the checklist tool links to"],
   ["rows[].library", "resolved to a human name by libraryName()"],
   ["rows[].parent", "resolved to \"article of RESPERSMAN\""],
   ["rows[].url", "emitted as the href, not as text"],
   ["rows[].reach", "selects how the row is reached (web/phone/CAC), not a label"],
-  ["rows[].due.*", "consumed by lib/due.js; the static page is not a deadline calculator"],
-  ["rows.id", "the service id in a ranks section"],
-  ["rows.sourcePdf", "linked as a download, not printed"],
-  ["rows.warrantNote", "printed ONLY where the app prints it — see the dedicated test below"],
-  ["rows.enlisted[].variants[]", "alternate titles for search; neither view prints them"],
 ]);
 
 function isExempt(path) {
@@ -3528,23 +3557,53 @@ describe("static reference pages", () => {
     }
   });
 
-  it("the warrant note is withheld exactly where the app withholds it", () => {
-    // TopicSection.vue renders warrantNote only when the service has no warrant
-    // tier: `v-if="!rows.warrant?.length && rows.warrantNote"`. The Coast Guard
-    // has W-2 through W-4 AND a note explaining the missing W-1/W-5, so a
-    // renderer that just prints the note whenever it exists diverges on exactly
-    // one of six services — the kind of gap nobody finds by looking.
-    const page = visibleText(PAGE_BY_NAME.get(pagePathFor("ranks")));
-    const withNote = TOPIC_BY_ID.get("ranks").sections.filter((s) => s.rows?.warrantNote);
-    assert.ok(withNote.length >= 3, "no service carries a warrantNote — this test stopped testing anything");
-    for (const s of withNote) {
-      const hasWarrantTier = Boolean(s.rows.warrant?.length);
-      assert.equal(
-        page.includes(s.rows.warrantNote),
-        !hasWarrantTier,
-        `${s.id}: warrantNote should be ${hasWarrantTier ? "withheld (the service HAS warrant grades)" : "printed"}`,
-      );
+  it("a rank citation resolves to the service it names", () => {
+    // The explorer shows ONE service behind a selector, so `?a=usmc` is honoured
+    // by SELECTING, not by scrolling. Resolution lives in lib/ so it is testable
+    // here; whether the component acts on it is smoke's job.
+    const ids = TOPIC_BY_ID.get("ranks").sections.map((x) => x.id);
+    assert.ok(ids.includes("usmc") && ids.length === 6, "the rank sections are not the six services");
+
+    for (const id of ids) {
+      assert.equal(citedService({ a: id }, ids), id, `${id} did not resolve to itself`);
     }
+    // A citation to something that is not a service must not select one. The
+    // explorer also carries `sec-officer`/`sec-warrant`/`sec-enlisted` anchors,
+    // and treating one of those as a service id would select nothing while
+    // looking like it worked.
+    assert.equal(citedService({ a: "officer" }, ids), null);
+    assert.equal(citedService({ a: "" }, ids), null);
+    assert.equal(citedService({}, ids), null);
+    assert.equal(citedService(undefined, ids), null);
+
+    // Citation wins over the current selection; absent one, the selection holds.
+    assert.equal(serviceToShow({ a: "uscg" }, ids, "usn"), "uscg");
+    assert.equal(serviceToShow({ a: "nonsense" }, ids, "usn"), "usn");
+    assert.equal(serviceToShow({}, ids, "usa"), "usa");
+  });
+
+  it("the fixture that makes the warrant-note rule testable still exists", () => {
+    // The rule, in TopicSection.vue and RankExplorer.vue alike: print
+    // warrantNote only where the service has NO warrant tier. It used to be
+    // asserted against the prerendered ranks page; that page went with the topic
+    // when the rank charts moved to the explorer, so the rendered assertion now
+    // lives in smoke.mjs (checkRankCitation) where a browser can see it.
+    //
+    // What stays here is the DATA precondition, because the rendered check is
+    // only meaningful while one service has both: the Coast Guard runs W-2
+    // through W-4 and still carries a note about the missing W-1/W-5. Drop that
+    // service and "withhold when the tier is populated" and "print it whenever
+    // it exists" become the same function, and the smoke check would pass
+    // against a renderer that had lost the rule entirely.
+    const svcs = TOPIC_BY_ID.get("ranks").sections.map((s) => s.rows);
+    assert.ok(
+      svcs.some((v) => v.warrantNote && v.warrant?.length),
+      "no service has both warrant grades and a warrantNote — the withholding rule is untestable",
+    );
+    assert.ok(
+      svcs.some((v) => v.warrantNote && !v.warrant?.length),
+      "no service has a warrantNote with an empty warrant tier — nothing would ever print one",
+    );
   });
 
   it("nothing renders as undefined, NaN, or [object Object]", () => {
@@ -3655,10 +3714,6 @@ describe("static reference pages", () => {
           `${fileName} references "${ref}" — a stray ../ past the site root`,
         );
       }
-      // Both insigniaStyle and spriteStyle return url(./img/…), which resolves
-      // against the DOCUMENT, so leaving one unrewritten means every sprite on a
-      // nested page 404s while the page itself looks fine.
-      assert.ok(!/url\(\.\//.test(source), `${fileName} has an unrewritten url(./ …) — see styleAttr()`);
     }
   });
 

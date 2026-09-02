@@ -188,8 +188,6 @@ export function buildCorpus() {
         normText: norm(text),
         sourcePdf: topic.sourcePdf,
         note: topic.note ?? null,
-        toolRoute: topic.toolRoute ?? null,
-        toolLabel: topic.toolLabel ?? null,
         route: topicRoute(topic.id, section.id),
         // What the answer card calls that destination. Derived here rather than
         // branched on the topic id in the template, which was already wrong for

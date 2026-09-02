@@ -114,7 +114,10 @@ function wipe() {
 }
 
 const linkCount = CATEGORIES.reduce((n, c) => n + c.links.length, 0);
-const sectionCount = TOPICS.reduce((n, t) => n + t.sections.length, 0);
+// Across ALL topics, not just the ones with a page: a section rendered by the
+// rank explorer is reference content the site carries, and counting only
+// knowledge pages would report the site as a third smaller than it is.
+const sectionCount = ALL_TOPICS.reduce((n, t) => n + t.sections.length, 0);
 
 /**
  * Derived, not typed. Every one of these was a hardcoded number that went stale
@@ -149,7 +152,7 @@ const linkableSystems = SYSTEMS.filter((s) => s.reach !== "offline").length;
       <h1 class="salt-heading text-h4 mb-2">About SALTDOG</h1>
       <p class="text-body-1 mb-0" style="max-width: 74ch; opacity: 0.88">
         An unofficial quick-reference desk for Navy reservists: a condensed
-        systems directory, {{ TOPICS.length }} reference topics transcribed from
+        systems directory, {{ ALL_TOPICS.length }} reference topics transcribed from
         one-page guides, and a handful of readiness calculators. Static files
         only — no server, no account, no analytics.
       </p>
@@ -160,7 +163,11 @@ const linkableSystems = SYSTEMS.filter((s) => s.reach !== "offline").length;
         <span class="salt-eyebrow">What's here</span>
         <ul class="text-body-2 pl-5 mb-0 mt-1">
           <li>{{ linkCount }} links across {{ CATEGORIES.length }} categories</li>
-          <li>{{ TOPICS.length }} knowledge topics, {{ sectionCount }} reference sections</li>
+          <li>
+            {{ ALL_TOPICS.length }} reference topics ({{ TOPICS.length }} with a
+            page of their own; the rest are rendered by the tool that uses them),
+            {{ sectionCount }} sections
+          </li>
           <li>{{ pdfCount }} source PDFs, downloadable</li>
           <li>{{ TOOLS.length }} interactive tools</li>
           <li>

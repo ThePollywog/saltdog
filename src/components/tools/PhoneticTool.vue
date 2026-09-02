@@ -5,12 +5,26 @@
  * The output is selectable text (not just a visual), and there's a copy button,
  * because the actual use case is pasting a spelled-out name into a message or
  * reading it off a phone while on a radio or a call.
+ *
+ * This is the ONLY page for the phonetic alphabet. The two tables below are the
+ * topic in data/phonetic.js in full, which is why that topic declares its `home`
+ * as this tool and has no knowledge page: a second URL would have shown these
+ * same two tables with the speller missing.
  */
 import { computed, ref } from "vue";
 import { mdiContentCopy, mdiCheck } from "@mdi/js";
 import { ALPHABET, DIGITS, spell } from "../../data/phonetic.js";
+import { useCitedSection } from "../../composables/useCitedSection.js";
 import PdfButton from "../common/PdfButton.vue";
 import RefTable from "../common/RefTable.vue";
+
+/**
+ * A citation to `phonetic-alphabet#digits` now lands here rather than on a
+ * knowledge page, so the tool has to honour `?a=<sectionId>` the way
+ * KnowledgeView does — otherwise every phonetic citation drops the reader at the
+ * top of the speller with no indication of what was cited.
+ */
+const { cited } = useCitedSection();
 
 const text = ref("");
 const copied = ref(false);
@@ -67,12 +81,20 @@ async function copy() {
     </v-card>
 
     <div class="salt-two-col">
-      <section id="sec-letters" class="salt-section" tabindex="-1">
+      <section
+        id="sec-letters"
+        :class="['salt-section', { 'salt-cited': cited === 'letters' }]"
+        tabindex="-1"
+      >
         <h3 class="salt-heading text-h6 mb-3">Letters</h3>
         <RefTable :columns="COLUMNS" :rows="ALPHABET" caption="Phonetic code words for letters" />
       </section>
 
-      <section id="sec-digits" class="salt-section" tabindex="-1">
+      <section
+        id="sec-digits"
+        :class="['salt-section', { 'salt-cited': cited === 'digits' }]"
+        tabindex="-1"
+      >
         <h3 class="salt-heading text-h6 mb-3">Numerals</h3>
         <RefTable :columns="COLUMNS" :rows="DIGITS" caption="Phonetic code words for digits" />
       </section>

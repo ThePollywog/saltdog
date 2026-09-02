@@ -14,15 +14,48 @@
  * Insignia come from the shared sprite sheet cut out of the source charts. The
  * by-paygrade view is the one that needed them most: "what does an E-8 look like
  * in each service" is not a question a column of titles answers.
+ *
+ * This is the ONLY page for the rank charts. data/ranks.js declares its `home`
+ * as this tool, and its six sections are the six services — which is why a
+ * citation is handled by SELECTING a service rather than by scrolling to it.
+ * Six stacked charts was what the knowledge page did, and it is the thing the
+ * selector exists to avoid.
  */
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { CORRECTIONS, SERVICES } from "../../data/ranks.js";
 import { insigniaStyle } from "../../lib/insignia.js";
+import { citedService } from "../../lib/rankSelection.js";
+import { useCitedSection } from "../../composables/useCitedSection.js";
 import PdfButton from "../common/PdfButton.vue";
 import RefTable from "../common/RefTable.vue";
 
+const route = useRoute();
+const SERVICE_IDS = SERVICES.map((s) => s.id);
+
 const mode = ref("service");
-const serviceId = ref("usn");
+
+/**
+ * Resolved from the route SYNCHRONOUSLY, not in onMounted: useCitedSection
+ * looks for `#sec-<id>` one tick after mount, and on a cold load that element
+ * only exists if the right service was already selected during setup.
+ */
+const serviceId = ref(citedService(route.query, SERVICE_IDS) ?? "usn");
+
+/** A citation arriving while the tool is already open still moves the selector. */
+watch(
+  () => route.query.a,
+  () => {
+    const cite = citedService(route.query, SERVICE_IDS);
+    if (!cite) return;
+    serviceId.value = cite;
+    // A service citation is meaningless in the compare view, which shows one
+    // paygrade across all six.
+    mode.value = "service";
+  },
+);
+
+const { cited } = useCitedSection();
 const paygrade = ref("E-8");
 
 const service = computed(() => SERVICES.find((s) => s.id === serviceId.value) ?? SERVICES[0]);
@@ -136,6 +169,16 @@ const crossRows = computed(() =>
           />
         </div>
       </v-card>
+
+      <!-- Focus target for a citation to this service, and the only place the
+           selected service is stated as a heading rather than as a form value. -->
+      <section
+        :id="`sec-${service.id}`"
+        :class="['salt-section', 'mb-4', { 'salt-cited': cited === service.id }]"
+        tabindex="-1"
+      >
+        <h3 class="salt-heading text-h6 mb-0">{{ service.name }} ({{ service.short }})</h3>
+      </section>
 
       <section
         v-for="tier in TIERS"

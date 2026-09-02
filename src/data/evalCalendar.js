@@ -53,8 +53,11 @@ export default {
   // eNAVFIT is where the report is written; iPERMS is where you confirm it
   // landed. Both are named in the caveats below.
   systems: ["enavfit", "ompf"],
-  toolRoute: { name: "tools", params: { tool: "eval" } },
-  toolLabel: "Look up my paygrade",
+  // Rendered by the lookup tool. The schedule, the due-date rules and the
+  // caveats are what you read once the tool has told you your month, so they
+  // belong under it rather than at a second URL.
+  home: { name: "tools", params: { tool: "eval" } },
+  homeLabel: "EVAL / FITREP Due Date",
   sections: [
     {
       id: "schedule",

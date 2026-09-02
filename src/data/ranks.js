@@ -376,8 +376,11 @@ export default {
   ],
   note:
     "Insignia artwork is cut from the defense.gov source charts; download a chart for the full-size original.",
-  toolRoute: { name: "tools", params: { tool: "ranks" } },
-  toolLabel: "Open the rank explorer",
+  // Rendered by the rank explorer. Its service selector IS this topic's
+  // section list, so a citation to `ranks#usmc` selects that service rather
+  // than scrolling a page of six stacked charts.
+  home: { name: "tools", params: { tool: "ranks" } },
+  homeLabel: "Rank Explorer",
   sections: SERVICES.map((s) => ({
     id: s.id,
     heading: `${s.name} (${s.short})`,

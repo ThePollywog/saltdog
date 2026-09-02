@@ -9,14 +9,43 @@
  * Item ids are hand-written in the data module and never derived from labels.
  * Slugifying the display text is the tempting shortcut, and it silently wipes
  * everyone's progress the first time somebody fixes a typo in a label.
+ *
+ * This is the ONLY page for the checklist topic. The cadence groups are the
+ * ticked rows; the how-to procedures render below them, rather than on a
+ * knowledge page the rows used to link out to. That link was the argument for
+ * merging: following it took you off the tool, and the procedure you wanted was
+ * a step for the box you were standing on.
  */
 import { computed, ref } from "vue";
 import { mdiCheckAll, mdiCloseCircleOutline, mdiUndoVariant } from "@mdi/js";
-import { GROUPS, HOWTO, HOWTO_NOTE, NOTE } from "../../data/checklist.js";
+import checklistTopic, { GROUPS, HOWTO, HOWTO_NOTE, NOTE } from "../../data/checklist.js";
+import { topicRoute } from "../../data/index.js";
 import { useLocalStore } from "../../composables/useLocalStore.js";
+import { useCitedSection } from "../../composables/useCitedSection.js";
 import PdfButton from "../common/PdfButton.vue";
 import SystemLinks from "../common/SystemLinks.vue";
 import DirectiveRefs from "../common/DirectiveRefs.vue";
+import TopicSection from "../common/TopicSection.vue";
+
+/**
+ * A citation to `reservist-checklist#howto-nsips-points` lands here now, so the
+ * tool honours `?a=<sectionId>` the way KnowledgeView did.
+ */
+const { cited } = useCitedSection();
+
+/**
+ * The procedure sections, taken from the topic rather than rebuilt from HOWTO:
+ * <TopicSection> renders the same objects the chat answer card does, so the
+ * steps cannot drift between the two.
+ */
+const howtoSections = checklistTopic.sections.filter((x) => x.id.startsWith("howto-"));
+
+/**
+ * Where a row's "How to" link points. Via topicRoute so it follows the topic's
+ * `home` — hardcoding the tools route here is how this link broke the first
+ * time, when it still named the knowledge route after the page was gone.
+ */
+const howtoLink = (id) => topicRoute(checklistTopic.id, `howto-${id}`);
 
 const { state: done, reset } = useLocalStore("checklist", {
   version: 1,
@@ -70,7 +99,6 @@ function restore() {
 
 /** How-to procedures, keyed for the cross-links on checklist rows. */
 const howtoById = Object.fromEntries(HOWTO.map((h) => [h.id, h]));
-const expanded = ref([]);
 </script>
 
 <template>
@@ -115,7 +143,7 @@ const expanded = ref([]);
       v-for="g in GROUPS"
       :key="g.id"
       :id="`sec-${g.id}`"
-      class="salt-section mb-6"
+      :class="['salt-section', 'mb-6', { 'salt-cited': cited === g.id }]"
       tabindex="-1"
     >
       <div class="d-flex flex-wrap align-center justify-space-between ga-2 mb-1">
@@ -166,7 +194,7 @@ const expanded = ref([]);
             </div>
             <router-link
               v-if="item.howto && howtoById[item.howto]"
-              :to="{ name: 'knowledge', params: { topicId: 'reservist-checklist' }, query: { a: `howto-${item.howto}` } }"
+              :to="howtoLink(item.howto)"
               class="salt-link text-caption"
             >How to: {{ howtoById[item.howto].heading || item.howto }}</router-link>
 
@@ -180,6 +208,18 @@ const expanded = ref([]);
         </div>
       </v-card>
     </section>
+
+    <!-- The procedures. These used to live on the knowledge page the rows linked
+         out to; they are the second half of the topic, and the half that answers
+         "fine, but how". -->
+    <h3 class="salt-heading text-h6 mt-8 mb-3">How to</h3>
+    <TopicSection
+      v-for="sec in howtoSections"
+      :key="sec.id"
+      :section="sec"
+      :level="4"
+      :cited="cited === sec.id"
+    />
 
     <v-alert v-if="NOTE" density="compact" class="mb-3">
       <span class="text-body-2">{{ NOTE }}</span>
