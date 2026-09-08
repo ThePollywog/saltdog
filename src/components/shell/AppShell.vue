@@ -8,7 +8,7 @@
 import { computed, ref, watch } from "vue";
 import { useDisplay } from "vuetify";
 import { useRoute } from "vue-router";
-import { mdiMenu, mdiOpenInNew, mdiWeatherNight, mdiWeatherSunny } from "@mdi/js";
+import { mdiEmailOutline, mdiMenu, mdiWeatherNight, mdiWeatherSunny } from "@mdi/js";
 import NavDrawer from "./NavDrawer.vue";
 import ChatWidget from "../chat/ChatWidget.vue";
 import { useAppTheme } from "../../composables/useAppTheme.js";
@@ -90,22 +90,25 @@ const feedback = computed(() => {
           Navy publication. Runs entirely in your browser; no data is transmitted.
         </div>
         <!--
-          Opens a prefilled issue on the project's single queue. Deliberately
-          plain links: they leave the site, and dressing an outbound link as a
-          button is how people end up surprised by a new tab.
+          Opens a prefilled email to the project mailbox. Deliberately plain
+          links: dressing one as a button is how people end up surprised by
+          what it does.
+
+          No target="_blank" — a mailto handed to a new tab leaves an empty tab
+          behind on every desktop browser, and on a machine with no mail client
+          registered it leaves a blank page and no explanation. Same tab means a
+          failed handoff costs nothing.
         -->
         <div class="text-caption mt-2 d-flex flex-wrap ga-4">
           <a
             v-for="link in feedback"
             :key="link.kind"
             :href="link.href"
-            target="_blank"
-            rel="noopener noreferrer"
             class="salt-link d-inline-flex align-center ga-1"
           >
             {{ link.label }}
-            <v-icon :icon="mdiOpenInNew" size="13" aria-hidden="true" />
-            <span class="sr-only">(opens GitHub in a new tab)</span>
+            <v-icon :icon="mdiEmailOutline" size="13" aria-hidden="true" />
+            <span class="sr-only">(opens your email app)</span>
           </a>
         </div>
       </v-footer>

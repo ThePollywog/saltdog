@@ -5,7 +5,9 @@
  *
  * The AUTHORITIES table (COCOM/OPCON/TACON/ADCON/DIRLAUTH) came along with the
  * COCOM source and is the most-asked-about material of the set, so it ships as
- * its own section rather than being dropped.
+ * its own section rather than being dropped. TYCON was added afterwards and is
+ * the one row in this file with no line behind it in the PDF; it is labelled as
+ * Navy usage in the row itself so the page never implies otherwise.
  */
 
 export const GEOGRAPHIC = [
@@ -108,6 +110,16 @@ export const AUTHORITIES = [
     code: "ADCON",
     name: "Administrative Control",
     desc: "Authority over administration and support — man, train, equip; control of resources, personnel, logistics. The chain that signs your FITREP.",
+  },
+  {
+    // Not in build_cocoms.py and not in the joint list — TYCON is Navy usage,
+    // not a JP 1 authority. It sits here because the question it answers ("who
+    // owns my ship when it isn't deployed") is the one ADCON alone leaves half
+    // answered for a reservist, and the row says plainly that it is the Navy's
+    // name for a slice of ADCON rather than a sixth joint authority.
+    code: "TYCON",
+    name: "Type Commander control (Navy usage)",
+    desc: "How the fleet talks about the ADCON a Type Commander (TYCOM — SURFOR, AIRFOR, SUBFOR) holds over every ship or squadron of its type: manning, training, equipping, maintenance, and readiness certification before a unit is handed to a numbered fleet. Not a joint authority in its own right — it is ADCON exercised by type rather than by chain.",
   },
   {
     code: "DIRLAUTH",
@@ -228,6 +240,9 @@ export default {
         "opcon",
         "tacon",
         "adcon",
+        "tycon",
+        "tycom",
+        "type commander",
         "dirlauth",
         "operational control",
         "tactical control",

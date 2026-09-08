@@ -48,7 +48,7 @@ import ranksTopic, {
 } from "../src/data/ranks.js";
 import { insigniaStyle } from "../src/lib/insignia.js";
 import { AOR_ORDER, AOR_PATHS, LAND_PATH, MAP_H, MAP_W } from "../src/data/geo.js";
-import { GEOGRAPHIC } from "../src/data/cocoms.js";
+import { AUTHORITIES, GEOGRAPHIC } from "../src/data/cocoms.js";
 import { COVERED_PAYGRADES, EMPTY_MONTHS, lookupPaygrade } from "../src/lib/evalRules.js";
 import { GOOD_YEAR_MIN, anniversaryWindow, summarize, totalYear } from "../src/lib/points.js";
 import { parsePointRecord } from "../src/lib/importPoints.js";
@@ -176,6 +176,7 @@ const GOLDEN = [
   ["what does INDOPACOM cover", ["combatant-commands#geographic", "combatant-commands#functional"]],
   ["difference between OPCON and TACON", "combatant-commands#authorities"],
   ["what is ADCON", ["combatant-commands#authorities", "combatant-commands#geographic"]],
+  ["what is TYCON", "combatant-commands#authorities"],
   ["functional combatant commands", ["combatant-commands#functional", "combatant-commands#geographic"]],
 
   // --- ranks --------------------------------------------------------------
@@ -2020,6 +2021,32 @@ describe("world map geometry", () => {
   });
 });
 
+describe("command authorities", () => {
+  it("the five joint authorities from the source are all still there", () => {
+    // The row order is the order the source PDF teaches them in — broadest
+    // control first, then the coordination relationship that is not a control
+    // at all. Reordering reads as a doctrinal claim, so it is pinned.
+    const joint = AUTHORITIES.filter((a) => a.code !== "TYCON").map((a) => a.code);
+    assert.deepEqual(joint, ["COCOM", "OPCON", "TACON", "ADCON", "DIRLAUTH"]);
+  });
+
+  it("TYCON is present and labelled as Navy usage, not a joint authority", () => {
+    // TYCON is the one row with no line behind it in the source PDF. Shown
+    // unqualified next to five JP 1 authorities it would read as a sixth, which
+    // is exactly the mistake this section exists to prevent — so both the name
+    // and the description have to say what it actually is.
+    const tycon = AUTHORITIES.find((a) => a.code === "TYCON");
+    assert.ok(tycon, "TYCON is missing from the command authorities");
+    assert.match(tycon.name, /Navy usage/i, "TYCON's name does not mark it as Navy usage");
+    assert.match(
+      tycon.desc,
+      /not a joint authority/i,
+      "TYCON's description does not disclaim joint status",
+    );
+    assert.match(tycon.desc, /ADCON/, "TYCON's description does not tie it back to ADCON");
+  });
+});
+
 describe("awards and ribbon racks", () => {
   it("sprite indices are dense and match array position", () => {
     // The sprite sheet is a single column of tiles cut in precedence order, so
@@ -2184,55 +2211,99 @@ describe("awards and ribbon racks", () => {
 const HOSTED = [awardsTopic, uniformTopic];
 
 /**
- * Feedback links, and the issue queue they point at.
+ * Feedback links, and where they send people.
  *
- * Issues for all three sites are filed against thepollywog.github.io — a
- * different repository, which is exactly why this is checked here rather than
- * trusted. What CAN be checked from inside this repo is that the two things
- * this repo owns agree with each other: the footer links the app renders, and
- * the .github/ISSUE_TEMPLATE/config.yml that redirects GitHub's own "New issue"
- * button. Those name the same three templates on the same remote repo, and they
- * are edited months apart.
+ * The footer used to open a prefilled GitHub issue. It opens a prefilled email
+ * now, because GitHub answers /issues/new with a 302 to /login for anyone not
+ * signed in and no repository setting changes that — see src/lib/feedback.js.
  *
- * Not checked here, deliberately: whether those templates exist over there. A
- * test that reaches into a sibling working copy passes on this machine and
- * silently skips everywhere else, which is the shape of the homepage crawl check
- * that was deleted for exactly that reason. The central repo validates its own
- * templates in its own tools/check.mjs.
+ * The GitHub queue did not go away, so .github/ISSUE_TEMPLATE/config.yml is
+ * still checked here: it is what someone who lands on THIS repository's Issues
+ * tab sees, and it must still route them to the one central queue rather than
+ * opening a second one nobody watches. The two halves no longer share a
+ * destination, which is precisely why each is pinned on its own.
+ *
+ * Not checked here, deliberately: whether the templates over there exist, or
+ * whether the mailbox accepts mail. A test that reaches into a sibling working
+ * copy passes on this machine and silently skips everywhere else, which is the
+ * shape of the homepage crawl check that was deleted for exactly that reason.
  */
 describe("feedback links", () => {
   const CONFIG = readFileSync(join(ROOT, ".github/ISSUE_TEMPLATE/config.yml"), "utf8");
   const REPO = "https://github.com/ThePollywog/thepollywog.github.io";
+  const MAILBOX = "thepollywog@proton.me";
 
-  it("every form the app links is one the issue chooser also offers", () => {
-    const inConfig = new Set(
-      [...CONFIG.matchAll(/[?&]template=([\w.-]+)/g)].map((m) => m[1]),
+  it("every footer link opens a message to the project mailbox", () => {
+    for (const link of FOOTER_LINKS) {
+      const url = new URL(reportUrl(link.kind, "https://example.test/"));
+      assert.equal(url.protocol, "mailto:", `"${link.label}" is not a mailto: link`);
+      assert.equal(url.pathname, MAILBOX, `"${link.label}" mails ${url.pathname}`);
+    }
+  });
+
+  it("the footer names only kinds that exist", () => {
+    assert.ok(FOOTER_LINKS.length >= 1, "the footer declares no feedback links");
+    for (const l of FOOTER_LINKS) {
+      assert.ok(FORMS[l.kind], `footer link "${l.label}" names unknown kind "${l.kind}"`);
+    }
+  });
+
+  it("spaces are percent-encoded, not form-encoded", () => {
+    // URLSearchParams would be the obvious way to build this and is wrong: it
+    // encodes a space as "+", which mail clients hand over literally. The
+    // subject would arrive as "SALTDOG:+something+is+wrong".
+    const raw = reportUrl("correction", "https://example.test/");
+    assert.ok(!raw.includes("+"), `a form-encoded space reached the mailto: ${raw}`);
+    assert.match(raw, /subject=SALTDOG%3A%20/);
+  });
+
+  it("a report says which site and which page it came from", () => {
+    const where = "https://example.test/saltdog/#/tools/points";
+    const url = new URL(reportUrl("correction", where));
+    const subject = url.searchParams.get("subject");
+    const body = url.searchParams.get("body");
+    assert.ok(subject.startsWith(`${SITE}:`), `the subject does not name the site: ${subject}`);
+    // The hash has to survive: it is the entire route in a hash-routed app, and
+    // an unencoded `#` would truncate the body at the mail client's end.
+    assert.ok(body.includes(where), `the body does not carry the page: ${body}`);
+    assert.ok(
+      body.includes(FORMS.correction.prompt),
+      "the body does not ask the reporter what is wrong",
     );
-    const inApp = new Set(Object.values(FORMS));
-    assert.ok(inApp.size > 0, "the app offers no feedback forms at all");
-    assert.deepEqual(
-      [...inApp].filter((t) => !inConfig.has(t)),
-      [],
-      "the footer links a form the issue chooser does not offer",
-    );
-    assert.deepEqual(
-      [...inConfig].filter((t) => !inApp.has(t)),
-      [],
-      "the issue chooser offers a form the app never links",
+    assert.ok(
+      !new URL(reportUrl("correction")).searchParams.get("body").includes("Page:"),
+      "a report with no page still prints an empty Page: line",
     );
   });
 
-  it("both routes send people to the same repository", () => {
+  it("an unknown kind is a build-time error, not a broken link for the reporter", () => {
+    assert.throws(() => reportUrl("nope"), /unknown form/);
+  });
+
+  it("the footer offers every link it declares, and does not open mail in a new tab", () => {
+    const src = readFileSync(join(ROOT, "src/components/shell/AppShell.vue"), "utf8");
+    assert.match(src, /:href="link\.href"/, "the footer no longer renders the report links");
+    // A mailto in a new tab leaves an empty tab behind, and leaves a blank page
+    // with no explanation on a machine with no mail client registered.
+    // The anchor itself, not the whole footer: the comment above it explains
+    // the absence of target="_blank" by name, so a wider slice matches the
+    // prose that documents the rule and never fails.
+    const from = src.indexOf('v-for="link in feedback"');
+    const anchor = src.slice(from, src.indexOf("</a>", from));
+    assert.ok(anchor.length > 0, "the footer's feedback anchor could not be found");
+    assert.ok(
+      !anchor.includes('target="_blank"'),
+      "the footer opens a mailto: in a new tab, which strands an empty tab",
+    );
+  });
+
+  it("GitHub visitors are still routed to the one queue", () => {
     for (const [, url] of CONFIG.matchAll(/url: (\S+)/g)) {
       assert.ok(
         url.startsWith(`${REPO}/issues`),
         `the issue chooser links ${url}, which is not the project's issue queue`,
       );
     }
-    assert.ok(
-      reportUrl("correction").startsWith(`${REPO}/issues/new?`),
-      "the app's report link does not point at the project's issue queue",
-    );
   });
 
   it("this repository collects no issues of its own", () => {
@@ -2248,36 +2319,6 @@ describe("feedback links", () => {
       (f) => f !== "config.yml",
     );
     assert.deepEqual(templates, [], "a template here would collect issues in this repo");
-  });
-
-  it("a report says which site and which page it came from", () => {
-    const url = new URL(reportUrl("correction", "https://example.test/saltdog/#/tools/points"));
-    assert.equal(url.searchParams.get("site"), SITE);
-    assert.equal(url.searchParams.get("template"), FORMS.correction);
-    // The hash has to survive: it is the entire route in a hash-routed app, and
-    // an unencoded `#` would truncate the parameter at GitHub's end.
-    assert.equal(
-      url.searchParams.get("where"),
-      "https://example.test/saltdog/#/tools/points",
-    );
-    assert.ok(
-      !reportUrl("correction").includes("where="),
-      "an empty where= overrides the form's placeholder with a blank",
-    );
-  });
-
-  it("an unknown form is a build-time error, not a 404 for the reporter", () => {
-    assert.throws(() => reportUrl("nope"), /unknown form/);
-  });
-
-  it("the footer offers every link it declares, and they leave the site safely", () => {
-    const src = readFileSync(join(ROOT, "src/components/shell/AppShell.vue"), "utf8");
-    assert.ok(FOOTER_LINKS.length >= 1, "the footer declares no feedback links");
-    for (const l of FOOTER_LINKS) {
-      assert.ok(FORMS[l.kind], `footer link "${l.label}" names unknown form "${l.kind}"`);
-    }
-    assert.match(src, /:href="link\.href"/, "the footer no longer renders the report links");
-    assert.match(src, /rel="noopener noreferrer"/, "an outbound link without rel=noopener");
   });
 });
 

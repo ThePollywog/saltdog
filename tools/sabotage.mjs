@@ -1005,22 +1005,6 @@ const MUTATIONS = [
 
   // --- feedback links ------------------------------------------------------
   {
-    // The footer links a form the chooser does not offer — a 404 for whoever
-    // clicks it, and nothing in the app would ever notice.
-    file: "src/lib/feedback.js",
-    find: '  feature: "feature-request.yml",',
-    repl: '  feature: "feature-requests.yml",',
-    breaks: "every form the app links is one the issue chooser also offers",
-  },
-  {
-    // The other direction: a template offered by the chooser that the app never
-    // links, which is how a form quietly stops being reachable from the site.
-    file: ".github/ISSUE_TEMPLATE/config.yml",
-    find: "template=bug.yml&site=SALTDOG",
-    repl: "template=crash.yml&site=SALTDOG",
-    breaks: "every form the app links is one the issue chooser also offers",
-  },
-  {
     // Reports collect in this repo instead of the one queue, where nobody is
     // watching for them.
     file: ".github/ISSUE_TEMPLATE/config.yml",
@@ -1036,30 +1020,46 @@ const MUTATIONS = [
     file: ".github/ISSUE_TEMPLATE/config.yml",
     find: "https://github.com/ThePollywog/thepollywog.github.io/issues/new?template=content-correction.yml",
     repl: "https://github.com/ThePollywog/saltdog/issues/new?template=content-correction.yml",
-    breaks: "both routes send people to the same repository",
+    breaks: "GitHub visitors are still routed to the one queue",
   },
   {
-    // Drop the site field and every report lands in one queue with no way to
-    // tell which of three sites it is about — the one thing centralizing costs.
+    // Mail the wrong address. Every link still opens the mail client, so the
+    // footer looks and behaves exactly right; the reports just never arrive.
     file: "src/lib/feedback.js",
-    find: "  const q = new URLSearchParams({ template, site: SITE });",
-    repl: "  const q = new URLSearchParams({ template });",
+    find: 'const CONTACT = "thepollywog@proton.me";',
+    repl: 'const CONTACT = "thepollywog@example.com";',
+    breaks: "every footer link opens a message to the project mailbox",
+  },
+  {
+    // Build the query the obvious way. URLSearchParams is form encoding, so
+    // every space becomes "+" and the subject arrives mangled.
+    file: "src/lib/feedback.js",
+    find: '  const q = `subject=${encodeURIComponent(form.subject)}&body=${encodeURIComponent(body)}`;',
+    repl: "  const q = new URLSearchParams({ subject: form.subject, body }).toString();",
+    breaks: "spaces are percent-encoded, not form-encoded",
+  },
+  {
+    // Drop the site from the subject and every report lands in one mailbox with
+    // no way to tell which of three sites it is about.
+    file: "src/lib/feedback.js",
+    find: "    subject: `${SITE}: something is wrong`,",
+    repl: '    subject: "Something is wrong",',
     breaks: "a report says which site and which page it came from",
   },
   {
-    // Send an empty `where` and the form's placeholder is replaced by a blank,
-    // losing the example that tells someone what to paste.
+    // Send an empty `where` and the message carries a "Page:" line with nothing
+    // after it, which reads as something the reporter forgot to fill in.
     file: "src/lib/feedback.js",
-    find: "  if (where) q.set(\"where\", where);",
-    repl: "  q.set(\"where\", where);",
+    find: "  const body = where ? `${form.prompt}\\n\\n\\n---\\nPage: ${where}\\n` : `${form.prompt}\\n`;",
+    repl: "  const body = `${form.prompt}\\n\\n\\n---\\nPage: ${where}\\n`;",
     breaks: "a report says which site and which page it came from",
   },
   {
-    // An unknown form silently builds a URL to a template that does not exist.
+    // An unknown kind silently builds a mailto with "undefined" in it.
     file: "src/lib/feedback.js",
-    find: '  if (!template) throw new Error(`feedback: unknown form "${kind}"`);',
+    find: '  if (!form) throw new Error(`feedback: unknown form "${kind}"`);',
     repl: "",
-    breaks: "an unknown form is a build-time error",
+    breaks: "an unknown kind is a build-time error",
   },
   {
     // The links stop rendering. The footer still paints its disclaimer, so the
@@ -1070,11 +1070,13 @@ const MUTATIONS = [
     breaks: "the footer offers every link it declares",
   },
   {
-    // An outbound target=_blank without rel=noopener.
+    // Open the mailto in a new tab: on every desktop browser that strands an
+    // empty tab, and on a machine with no mail client it is a blank page with
+    // no explanation.
     file: "src/components/shell/AppShell.vue",
-    find: '            rel="noopener noreferrer"',
-    repl: "",
-    breaks: "the footer offers every link it declares",
+    find: '            :href="link.href"\n',
+    repl: '            :href="link.href"\n            target="_blank"\n',
+    breaks: "does not open mail in a new tab",
   },
 ];
 

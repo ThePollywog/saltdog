@@ -1031,7 +1031,7 @@ async function checkRibbonCitation() {
  * way; only the issue queue would ever show it, months later.
  */
 async function checkFeedbackLinks() {
-  const { FOOTER_LINKS, FORMS, SITE } = await import("../src/lib/feedback.js");
+  const { FOOTER_LINKS, SITE } = await import("../src/lib/feedback.js");
 
   // A route that is still a knowledge page: the point is to read the footer on a
   // deep page, and a route that redirects would assert the wrong `where`.
@@ -1054,13 +1054,15 @@ async function checkFeedbackLinks() {
 
     for (const href of onRanks) {
       const u = new URL(href);
-      if (u.host !== "github.com") page.fail(`feedback link leaves for ${u.host}`);
-      if (!Object.values(FORMS).includes(u.searchParams.get("template"))) {
-        page.fail(`feedback link names unknown template ${u.searchParams.get("template")}`);
+      if (u.protocol !== "mailto:") page.fail(`feedback link is ${u.protocol}, not mailto:`);
+      if (u.pathname !== "thepollywog@proton.me") {
+        page.fail(`feedback link mails ${u.pathname}`);
       }
-      if (u.searchParams.get("site") !== SITE) page.fail("feedback link does not name the site");
-      if (!String(u.searchParams.get("where")).includes("#/knowledge/doctrine")) {
-        page.fail(`feedback link reports the wrong page: ${u.searchParams.get("where")}`);
+      if (!String(u.searchParams.get("subject")).startsWith(`${SITE}:`)) {
+        page.fail(`feedback link does not name the site: ${u.searchParams.get("subject")}`);
+      }
+      if (!String(u.searchParams.get("body")).includes("#/knowledge/doctrine")) {
+        page.fail(`feedback link reports the wrong page: ${u.searchParams.get("body")}`);
       }
     }
 
@@ -1074,7 +1076,7 @@ async function checkFeedbackLinks() {
       const after = await read();
       page.fail(
         `after navigating to #/tools/points the footer still reports ${
-          new URL(after[0] ?? "https://x.invalid").searchParams.get("where")
+          new URL(after[0] ?? "mailto:x@invalid").searchParams.get("body")
         }`,
       );
     }

@@ -19,7 +19,7 @@ NOSC, or MNCC (1-833-330-MNCC).
 | **Reference assistant** | Offline keyword search over all 70 cards (the 28 knowledge sections, the 9 quick-links categories, and the 33 sections the tools render), with a WebGL orb. Not an AI, no network calls |
 | **Go shortcuts** (`#/go`) | Register the site as a browser search engine and `go nsips` in the address bar lands on NSIPS. Resolves client-side from a table built out of the systems registry |
 | **About** (`#/about`) | What's stored in your browser, with export / import / delete |
-| **Report / suggest** | Footer links on every page open a prefilled issue on the project's single queue, carrying the page you were on |
+| **Report / suggest** | Footer links on every page open a prefilled email to the project mailbox, carrying the page you were on |
 | **Static reference pages** (`/knowledge/`, `/knowledge/<topic>/`, `/quick-links/`) | The 37 sections that have a page of their own, again as 7 plain HTML files — a hub plus one per topic, quick links included — with no JavaScript at all, generated at build time. This is the only form a search engine can index; see the design notes |
 
 The 14 source PDFs ship in `public/pdf/` and every page links its own original,
@@ -33,6 +33,15 @@ npm run dev        # http://localhost:8773
 npm run build      # -> dist/
 npm run preview    # serve the built output
 ```
+
+Or through the Makefile, which installs first if `node_modules` is missing or
+older than the lockfile (matching `../webnavfit`):
+
+```bash
+make start     # npm run dev
+```
+
+`build`, `preview`, `test`, `smoke`, `verify`, and `sabotage` are targets too.
 
 ### Deploying
 
@@ -50,11 +59,11 @@ case-sensitive, so the shortcut is lowercase (`/webnavfit/` resolves there and
 ## Verification
 
 ```bash
-npm test      # 292 tests: golden questions, corpus integrity, domain rules
-npm run smoke # builds, serves, drives real Chrome over 59 checks
+npm test      # 299 tests: golden questions, corpus integrity, domain rules
+npm run smoke # builds, serves, drives real Chrome over 62 checks
 npm run verify  # both
 
-node tools/sabotage.mjs   # 110 mutations to real source; every one must be caught
+node tools/sabotage.mjs   # 113 mutations to real source; every one must be caught
 ```
 
 `npm test` is `node --test` with zero dependencies. It covers the two things
@@ -281,8 +290,24 @@ exactly one tab — none is unrenderable-but-citable, none makes the resolver
 depend on declaration order — and an arriving `?a=` beats a `?tab=` carried along
 in the same shared URL.
 
-**Issues for all three sites are filed in one queue.** SALTDOG, WEBNAVFIT and
-the homepage all report to `ThePollywog/thepollywog.github.io`; this repo's
+**The footer reports by email, not by GitHub issue.** GitHub answers
+`/issues/new` with a 302 to `/login` for anyone not signed in, and no repository
+setting changes that — the target repo is already public with Issues enabled and
+still bounces logged-out reporters. A reservist who spots a dead NSIPS link on a
+government machine is exactly the person with no GitHub account, and often on a
+network that cannot reach github.com at all, so the footer links `mailto:` and
+the reports arrive from everyone rather than from the subset that already has an
+account. The links carry no `target="_blank"`: a mailto handed to a new tab
+strands an empty one, and on a machine with no mail client registered it leaves a
+blank page and no explanation.
+
+The URL is built with `encodeURIComponent`, not `URLSearchParams`. The latter is
+the obvious choice and is wrong — it is form encoding, where a space is `+`, and
+mail clients hand that over literally, so every subject would arrive as
+`SALTDOG:+something+is+wrong`.
+
+**GitHub issues for all three sites still land in one queue.** SALTDOG, WEBNAVFIT
+and the homepage all report to `ThePollywog/thepollywog.github.io`; this repo's
 `.github/ISSUE_TEMPLATE/config.yml` turns blank issues off and offers only links
 there, which is GitHub's supported way to say "not here". Disabling Issues in
 repository settings would be the blunter version and is worse — it removes the
@@ -292,7 +317,8 @@ The reason is the reporter, not the maintainer: someone who finds a dead NSIPS
 link should not have to work out which of three repositories owns it, and one
 correction often touches two sites. Centralizing moves that routing decision into
 a required "Which site" field on the form, which is why every form has one and
-why the central repo asserts it.
+why the central repo asserts it. The mailto carries the same information in its
+subject line.
 
 `src/lib/feedback.js` builds the same links for the app footer, prefilled with
 `location.href` so a report says which page it came from without being asked.
