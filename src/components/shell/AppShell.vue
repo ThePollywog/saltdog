@@ -58,7 +58,7 @@ const feedback = computed(() => {
         class="d-flex flex-column text-decoration-none"
         style="color: inherit"
       >
-        <span class="salt-eyebrow mb-0">U.S. Navy Reserve</span>
+        <span class="salt-eyebrow mb-0">U.S. Navy</span>
         <span class="salt-heading text-h6" style="line-height: 1.1">SALTDOG</span>
       </router-link>
 

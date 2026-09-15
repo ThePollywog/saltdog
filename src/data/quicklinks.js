@@ -1,5 +1,7 @@
 /**
- * Navy system quick links, condensed to what a SELRES reservist actually uses.
+ * Navy system quick links, condensed to what a Sailor actually uses. The
+ * reserve-only systems (NROWS, RFMT, Navy Reserve Homeport) say so in their own
+ * descriptions, so the directory does not need a second audience label on top.
  *
  * Source of truth: guides/military/admin/build_quicklinks.py (SECTIONS).
  * Entities from that HTML-generating source are converted to Unicode here —
@@ -235,7 +237,7 @@ export default {
   home: { name: "quicklinks" },
   homeLabel: "Quick Links",
   blurb:
-    "Major personnel, pay, training and admin systems — condensed to the ones a drilling reservist touches.",
+    "Major personnel, pay, training and admin systems — condensed to the ones a Sailor touches.",
   sourcePdf: "navy-quicklinks.pdf",
   keywords: ["quick links", "system", "portal", "website", "where do i go"],
   note: DISCLAIMER,

@@ -104,8 +104,9 @@ const howtoById = Object.fromEntries(HOWTO.map((h) => [h.id, h]));
 <template>
   <div>
     <header class="mb-4">
-      <h2 class="salt-heading text-h5 mb-1">Readiness Checklist</h2>
+      <h2 class="salt-heading text-h5 mb-1">Reservist Readiness Checklist</h2>
       <p class="text-body-2 mb-3" style="opacity: 0.85">
+        For SELRES: the cadence is drill weekends, AT and the anniversary year.
         Tick items as you complete them. Progress is saved in this browser only —
         nothing is transmitted, and clearing site data erases it.
       </p>

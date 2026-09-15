@@ -13,7 +13,7 @@
 /** Minimum points for a satisfactory ("good") year. */
 export const GOOD_YEAR_MIN = 50;
 
-/** Good years needed for a reserve retirement. */
+/** Good years needed for a retirement. */
 export const RETIREMENT_YEARS = 20;
 
 /** Membership points credited for a full year of SELRES participation. */

@@ -190,8 +190,8 @@ function applyImport() {
 
       <v-alert v-if="summary.retirementEligible" type="success" density="compact" class="mt-4">
         <span class="text-body-2">
-          {{ RETIREMENT_YEARS }} good years reached — reserve retirement eligibility.
-          Confirm against your ESR and NOSC before acting on it.
+          {{ RETIREMENT_YEARS }} good years reached — retirement eligibility.
+          Confirm against your ESR and NRC before acting on it.
         </span>
       </v-alert>
     </v-card>

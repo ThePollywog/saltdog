@@ -1,6 +1,9 @@
 /**
- * The Navy systems a reservist actually has to log into — one entry per system,
- * one place where its URL lives.
+ * The Navy systems a Sailor actually has to log into — one entry per system,
+ * one place where its URL lives. Reserve-only systems are in here too and are
+ * named as such in their own `desc`, which is the only place that label belongs:
+ * a per-audience flag on the registry would have to be right for every consumer,
+ * and the description is already read by all of them.
  *
  * WHY THIS FILE EXISTS. The quick-links directory and the readiness checklist
  * both name the same two dozen systems. Before this, only the directory carried

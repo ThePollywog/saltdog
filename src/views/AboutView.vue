@@ -151,10 +151,11 @@ const linkableSystems = SYSTEMS.filter((s) => s.reach !== "offline").length;
       <span class="salt-eyebrow">About</span>
       <h1 class="salt-heading text-h4 mb-2">About SALTDOG</h1>
       <p class="text-body-1 mb-0" style="max-width: 74ch; opacity: 0.88">
-        An unofficial quick-reference desk for Navy reservists: a condensed
-        systems directory, {{ ALL_TOPICS.length }} reference topics transcribed from
-        one-page guides, and a handful of readiness calculators. Static files
-        only — no server, no account, no analytics.
+        An unofficial quick-reference desk for Sailors: a condensed systems
+        directory, {{ ALL_TOPICS.length }} reference topics transcribed from
+        one-page guides, and a handful of readiness calculators. The reserve-only
+        pieces — the annual checklist, points and good years — are labelled where
+        they appear. Static files only — no server, no account, no analytics.
       </p>
     </header>
 
@@ -202,8 +203,7 @@ const linkableSystems = SYSTEMS.filter((s) => s.reach !== "offline").length;
       </p>
       <p class="text-body-2 mb-0" style="max-width: 74ch; opacity: 0.88">
         The Navy's public quick-links page that inspired this one is no longer
-        reachable, so the directory is rebuilt from a reservist-scoped systems
-        list. Every address on the site — in the directory, on a checklist item,
+        reachable, so the directory is rebuilt from a systems list of its own. Every address on the site — in the directory, on a checklist item,
         under a tool — comes from that one list, so there is exactly one place to
         fix when one moves. Several of these systems have no public front door at
         all; those link the portal you reach them through and say so, rather than

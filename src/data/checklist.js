@@ -697,7 +697,7 @@ export default {
   // rows and the how-to procedures are the drawers beneath them, so the whole
   // topic is on the tool and the knowledge page had nothing left of its own.
   home: { name: "tools", params: { tool: "checklist" } },
-  homeLabel: "Readiness Checklist",
+  homeLabel: "Reservist Readiness Checklist",
   sections: [
     ...GROUPS.map((g) => ({
       id: g.id,

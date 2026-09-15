@@ -64,7 +64,7 @@ function clear() {
       <span class="salt-eyebrow">Directory</span>
       <h1 class="salt-heading text-h4 mb-2">Quick Links</h1>
       <p class="text-body-1 mb-4" style="max-width: 72ch; opacity: 0.88">
-        {{ total }} systems a drilling reservist actually uses, grouped by what
+        {{ total }} systems a Sailor actually uses, grouped by what
         you're trying to get done. Most require a CAC.
       </p>
       <div class="d-flex flex-wrap align-center ga-2">

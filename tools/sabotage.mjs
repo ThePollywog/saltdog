@@ -776,11 +776,66 @@ const MUTATIONS = [
     repl: '  home: { name: "tools", params: { tool: "points" } },',
     breaks: "every topic with a tool for its subject is hosted by that tool",
   },
+  // --- audience -----------------------------------------------------------
+  {
+    // Drop the audience from the tab. The tool still works perfectly; it just
+    // offers an active-duty Sailor a drill-weekend cadence as their annual list.
+    file: "src/data/tools.js",
+    find: '    title: "Reservist Checklist",',
+    repl: '    title: "Checklist",',
+    breaks: "the reserve-only tool says so before you open it",
+  },
+  {
+    // Same, in the nav drawer, which is the way in that has room to be specific.
+    file: "src/data/tools.js",
+    find: '    navTitle: "Reservist Readiness Checklist",',
+    repl: '    navTitle: "Readiness Checklist",',
+    breaks: "the reserve-only tool says so before you open it",
+  },
+  {
+    // Label a service-wide tool reserve-only. Nothing breaks and nothing looks
+    // wrong — the word just stops meaning anything on the one tab that needs it.
+    file: "src/data/tools.js",
+    find: '    navTitle: "Points & Good Years",',
+    repl: '    navTitle: "Reserve Points & Good Years",',
+    breaks: "nothing else in the tab bar claims to be reserve-only",
+  },
+  {
+    // Re-brand the whole site to the reserve, one tab title at a time. This is
+    // how it drifted back the first time.
+    file: "index.html",
+    find: "<title>SALTDOG — Navy Quick Reference</title>",
+    repl: "<title>SALTDOG — Navy Reservist Quick Reference</title>",
+    breaks: "the site's titles are not scoped to the reserve",
+  },
+  {
+    // The fallback title, which is what every route that forgets its own meta
+    // title prints. Nobody looks at it and it is on every such page.
+    file: "src/router.js",
+    find: '"SALTDOG — Navy Quick Reference"',
+    repl: '"SALTDOG — Navy Reservist Quick Reference"',
+    breaks: "the site's titles are not scoped to the reserve",
+  },
+  {
+    // The description search engines print. Narrowing it costs nothing visible
+    // in the app and tells every non-reservist the site is not for them.
+    file: "index.html",
+    find: "readiness tools for Sailors",
+    repl: "readiness tools for SELRES",
+    breaks: "the meta description names the whole audience",
+  },
+  {
+    // The headline, back to the old branding.
+    file: "src/views/HomeView.vue",
+    find: '<span class="salt-eyebrow">U.S. Navy — unofficial reference</span>',
+    repl: '<span class="salt-eyebrow">U.S. Navy Reserve — unofficial reference</span>',
+    breaks: "the home page's headline is not scoped to the reserve",
+  },
   {
     // The label the answer card prints in "Open in ___". Wrong here and the chat
     // offers to open the checklist in the rank explorer.
     file: "src/data/checklist.js",
-    find: '  homeLabel: "Readiness Checklist",',
+    find: '  homeLabel: "Reservist Readiness Checklist",',
     repl: '  homeLabel: "Rank Explorer",',
     breaks: "the answer card's destination label is never invented",
   },

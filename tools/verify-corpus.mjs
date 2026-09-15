@@ -2322,6 +2322,94 @@ describe("feedback links", () => {
   });
 });
 
+/**
+ * Who the site is for, and who one tool is for.
+ *
+ * The site was branded "Navy Reservist" end to end — title, meta description,
+ * home page, quick-links blurb — while most of what it holds (ranks, awards,
+ * COCOMs, EVAL dates, uniform placement, the phonetic alphabet, and all but a
+ * handful of the systems) is the same for every Sailor. The checklist is the
+ * genuine exception: its cadence is drill weekends, AT and the anniversary year,
+ * so an active-duty Sailor reading it as their own annual list would be reading
+ * the wrong list.
+ *
+ * Hence two rules, and they pull against each other, which is why both are
+ * pinned: the chrome names no audience narrower than the Navy, and the one
+ * reserve-scoped tool names its audience in every label a reader sees before
+ * they open it.
+ */
+describe("audience", () => {
+  const RESERVE = /reserv|selres/i;
+
+  it("the reserve-only tool says so before you open it", () => {
+    const checklist = TOOLS.find((t) => t.id === "checklist");
+    assert.ok(checklist, "the checklist tool is gone from the registry");
+    for (const field of ["title", "navTitle"]) {
+      assert.match(
+        checklist[field],
+        RESERVE,
+        `the checklist's ${field} no longer names its audience, so the tab bar `
+          + "offers it to the whole Navy",
+      );
+    }
+    // The chat's "Open in ___" is the fourth way in, and the only one that can
+    // appear on a page with no tab bar in sight.
+    assert.match(topicHomeLabel("reservist-checklist"), RESERVE);
+  });
+
+  it("nothing else in the tab bar claims to be reserve-only", () => {
+    // The complement of the rule above: naming the audience is what makes the
+    // label mean something, and it stops meaning anything if every tool carries
+    // it. Points is the near miss — good years ARE a reserve construct — but it
+    // is one tool among seven and the body copy carries that, not the tab.
+    const scoped = TOOLS.filter((t) => t.id !== "checklist" && RESERVE.test(t.navTitle));
+    assert.deepEqual(scoped.map((t) => t.id), []);
+  });
+
+  it("the site's titles are not scoped to the reserve", () => {
+    const html = readFileSync(join(ROOT, "index.html"), "utf8");
+    const router = readFileSync(join(ROOT, "src/router.js"), "utf8");
+    const titles = [
+      ["index.html <title>", /<title>([^<]*)<\/title>/.exec(html)?.[1]],
+      ["the router's fallback document title", /: "(SALTDOG[^"]*)"/.exec(router)?.[1]],
+    ];
+    for (const [what, text] of titles) {
+      assert.ok(text, `${what} could not be read, so this check proves nothing`);
+      assert.ok(
+        !RESERVE.test(text),
+        `${what} scopes the whole site to the reserve: "${text}"`,
+      );
+    }
+  });
+
+  it("the meta description names the whole audience, not just the reserve", () => {
+    // Deliberately not the blanket no-mention rule the titles get: the
+    // description has room to list the reservist checklist as one of the things
+    // in here, and saying so is useful. What it may not do is describe the site
+    // as being FOR reservists, so the test is that the broad audience is named.
+    const html = readFileSync(join(ROOT, "index.html"), "utf8");
+    const desc = /name="description"[^>]*?content="([^"]*)"/s.exec(html)?.[1];
+    assert.ok(desc, "index.html has no meta description");
+    assert.match(
+      desc,
+      /sailor/i,
+      `the meta description does not name Sailors as the audience: "${desc}"`,
+    );
+  });
+
+  it("the home page's headline is not scoped to the reserve", () => {
+    // The <header> only: the body below it names the reserve-only pieces on
+    // purpose, and that sentence is the point rather than a violation.
+    const home = readFileSync(join(ROOT, "src/views/HomeView.vue"), "utf8");
+    const head = home.slice(home.indexOf("<header"), home.indexOf("</h1>"));
+    assert.ok(head.length > 0, "the home page header could not be found");
+    assert.ok(
+      !RESERVE.test(head),
+      `the home page's eyebrow or headline is reserve-scoped: ${head.trim()}`,
+    );
+  });
+});
+
 describe("topic homes", () => {
   it("the three topic lists partition cleanly", () => {
     const ids = ALL_TOPICS.map((t) => t.id);
@@ -2418,7 +2506,7 @@ describe("topic homes", () => {
   it("the answer card's destination label is never invented", () => {
     assert.equal(topicHomeLabel("doctrine"), "Knowledge");
     assert.equal(topicHomeLabel("ranks"), "Rank Explorer");
-    assert.equal(topicHomeLabel("reservist-checklist"), "Readiness Checklist");
+    assert.equal(topicHomeLabel("reservist-checklist"), "Reservist Readiness Checklist");
     assert.equal(topicHomeLabel("quicklinks"), "Quick Links");
     assert.equal(topicHomeLabel("awards"), "Uniform Information");
     assert.equal(topicHomeLabel("uniform"), "Uniform Information");

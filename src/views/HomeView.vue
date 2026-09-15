@@ -13,7 +13,7 @@ import { TOOLS } from "../data/tools.js";
 const linkCount = CATEGORIES.reduce((n, c) => n + c.links.length, 0);
 
 /**
- * The five a drilling reservist opens most, above the fold.
+ * The five opened most, above the fold.
  *
  * This page's whole job is getting someone to a system and out. Making them
  * click "Browse links" first to reach NSIPS is one hop of pure friction for the
@@ -28,7 +28,7 @@ const CARDS = [
     icon: mdiLinkVariant,
     eyebrow: "Directory",
     title: "Quick Links",
-    body: `${linkCount} systems a drilling reservist actually touches — pay, records, readiness, training, benefits — with CAC requirements marked.`,
+    body: `${linkCount} systems a Sailor actually touches — pay, records, readiness, training, benefits — with CAC requirements marked. The reserve-only ones are named as such.`,
     cta: "Browse links",
   },
   {
@@ -50,7 +50,7 @@ const CARDS = [
     // Each of these now carries its own reference material as well as its
     // calculator — the ranks, the ribbons, the code words and the procedures are
     // all on the tool that uses them.
-    body: `${TOOLS.length} planning aids, each carrying the reference it works from: the annual checklist and its procedures, EVAL/FITREP due dates, retirement points, ranks for all six services, ribbon precedence and uniform placement, and the phonetic alphabet. Saved in this browser only.`,
+    body: `${TOOLS.length} planning aids, each carrying the reference it works from: the reservist annual checklist and its procedures, EVAL/FITREP due dates, retirement points, ranks for all six services, ribbon precedence and uniform placement, and the phonetic alphabet. Saved in this browser only.`,
     cta: "Open tools",
   },
 ];
@@ -61,15 +61,16 @@ const CARDS = [
     <DisclaimerBanner />
 
     <header class="mb-8">
-      <span class="salt-eyebrow">U.S. Navy Reserve — unofficial reference</span>
+      <span class="salt-eyebrow">U.S. Navy — unofficial reference</span>
       <h1 class="salt-heading text-h4 mb-3">
-        The reservist's quick-reference desk
+        The Sailor's quick-reference desk
       </h1>
       <p class="text-body-1" style="max-width: 68ch; opacity: 0.88">
-        A condensed version of the Navy quick-links directory, cut down to what a
-        SELRES sailor needs, plus the reference cards and readiness math that
-        usually live in a folder of PDFs. Everything runs in your browser — no
-        account, no server, and it keeps working offline once loaded.
+        A condensed version of the Navy quick-links directory, plus the reference
+        cards and readiness math that usually live in a folder of PDFs. Most of it
+        is the same for every Sailor; the parts that are reserve-only — the annual
+        checklist, points and good years — say so. Everything runs in your browser
+        — no account, no server, and it keeps working offline once loaded.
       </p>
 
       <SystemLinks

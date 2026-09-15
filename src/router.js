@@ -75,7 +75,7 @@ const router = createRouter({
 
 router.afterEach((to) => {
   const t = to.meta?.title;
-  document.title = t ? `${t} — SALTDOG` : "SALTDOG — Navy Reservist Quick Reference";
+  document.title = t ? `${t} — SALTDOG` : "SALTDOG — Navy Quick Reference";
 });
 
 export default router;

@@ -1,7 +1,7 @@
 {
   "name": "saltdog",
   "version": "1.0.0",
-  "description": "Condensed Navy Reservist quick links, knowledge references, and readiness tools. 100% client-side, no server.",
+  "description": "Condensed Navy quick links, reference cards, and readiness tools for Sailors, reservists included. 100% client-side, no server.",
   "license": "MIT",
   "type": "module",
   "scripts": {

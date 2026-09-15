@@ -22,11 +22,16 @@ import {
 
 export const TOOLS = [
   {
+    // "Reservist" is carried in both labels on purpose. This is the one tool
+    // whose content does not apply to the whole Navy — the cadence is drill
+    // weekends and AT, and an active-duty Sailor reading it as their own annual
+    // checklist would be reading the wrong list. Every other tool here is
+    // service-wide, so the audience is named on this one rather than on the site.
     id: "checklist",
     /** Short label for the tab bar. */
-    title: "Checklist",
+    title: "Reservist Checklist",
     /** Fuller label for the nav drawer, where there's room to be specific. */
-    navTitle: "Readiness Checklist",
+    navTitle: "Reservist Readiness Checklist",
     icon: mdiCheckboxMarkedOutline,
   },
   {
