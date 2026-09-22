@@ -44,6 +44,7 @@ const ROUTES = [
   ["#/knowledge/phonetic-alphabet", "Phonetic Speller"],
   ["#/knowledge/awards", "Uniform Information"],
   ["#/knowledge/uniform", "Uniform Information"],
+  ["#/knowledge/prt", "PRT Calculator"],
   // A line of the creed, not the topic title: this is the one page whose content
   // is a `verbatim` block, and the whole risk with a new section kind is that the
   // heading renders while the rows do not. Matching on the title would pass
@@ -59,7 +60,9 @@ const ROUTES = [
   ["#/tools/due", "Due Dates & Calendar"],
   ["#/tools/eval", "EVAL / FITREP Due Date"],
   ["#/tools/points", "Good Years"],
+  ["#/tools/prt", "PRT Calculator"],
   ["#/tools/phonetic", "Phonetic Speller"],
+  ["#/tools/globalwatch", "World Map"],
   ["#/tools/ranks", "Rank Explorer"],
   ["#/tools/ribbons", "Uniform Information"],
   // Each tab, because a tab that throws renders an empty panel under a working

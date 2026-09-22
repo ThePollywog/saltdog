@@ -8,6 +8,7 @@
 import { computed, ref, watch } from "vue";
 import { useDisplay } from "vuetify";
 import { useRoute } from "vue-router";
+import { TOOLS } from "../../data/tools.js";
 import { mdiEmailOutline, mdiMenu, mdiWeatherNight, mdiWeatherSunny } from "@mdi/js";
 import NavDrawer from "./NavDrawer.vue";
 import ChatWidget from "../chat/ChatWidget.vue";
@@ -39,6 +40,17 @@ const feedback = computed(() => {
   void route.fullPath;
   const here = typeof location === "undefined" ? "" : location.href;
   return FOOTER_LINKS.map((l) => ({ ...l, href: reportUrl(l.kind, here) }));
+});
+
+/**
+ * True for a tool that opted into `fullBleed` in data/tools.js — drops the
+ * site's usual centered 1180px column so that tool can use the full width
+ * next to the nav drawer. The app bar, nav drawer and footer are unaffected;
+ * only the routed content's own container changes.
+ */
+const fullBleed = computed(() => {
+  if (route.name !== "tools") return false;
+  return TOOLS.find((t) => t.id === route.params.tool)?.fullBleed === true;
 });
 </script>
 
@@ -77,7 +89,15 @@ const feedback = computed(() => {
     <v-main>
       <!-- tabindex="-1" so the skip link can move focus here, not just scroll. -->
       <main id="main" tabindex="-1" class="salt-section">
-        <v-container class="py-6" style="max-width: 1180px">
+        <v-container v-if="!fullBleed" class="py-6" style="max-width: 1180px">
+          <router-view v-slot="{ Component }">
+            <component :is="Component" />
+          </router-view>
+        </v-container>
+        <!-- fullBleed: same vertical rhythm (py-6), no max-width and no side
+             gutters — the tool's own header still gives it a left/right edge
+             to align to, it just isn't clipped to the reading column. -->
+        <v-container v-else fluid class="py-6 px-4">
           <router-view v-slot="{ Component }">
             <component :is="Component" />
           </router-view>

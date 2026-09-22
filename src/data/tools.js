@@ -18,6 +18,8 @@ import {
   mdiCalendarClockOutline,
   mdiCheckboxMarkedOutline,
   mdiMedalOutline,
+  mdiRadar,
+  mdiRunFast,
 } from "@mdi/js";
 
 export const TOOLS = [
@@ -55,6 +57,12 @@ export const TOOLS = [
     icon: mdiCalculatorVariantOutline,
   },
   {
+    id: "prt",
+    title: "PRT",
+    navTitle: "PRT Calculator",
+    icon: mdiRunFast,
+  },
+  {
     id: "phonetic",
     title: "Phonetic",
     navTitle: "Phonetic Speller",
@@ -74,5 +82,18 @@ export const TOOLS = [
     title: "Ranks",
     navTitle: "Rank Explorer",
     icon: mdiAccountGroupOutline,
+  },
+  {
+    // The id stays "globalwatch" — it names the ported dashboard this tool
+    // came from, not the displayed title. Same "display text is not identity"
+    // rule the ribbons id follows above.
+    id: "globalwatch",
+    title: "World Map",
+    navTitle: "World Map",
+    icon: mdiRadar,
+    // A day/night map is worth more than the site's usual 1180px reading
+    // column — AppShell.vue reads this flag to drop the centered container
+    // for just this one tool, while leaving the app bar and nav drawer alone.
+    fullBleed: true,
   },
 ];

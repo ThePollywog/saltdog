@@ -2463,6 +2463,7 @@ describe("topic homes", () => {
       "phonetic-alphabet": "phonetic",
       awards: "ribbons",
       uniform: "ribbons",
+      prt: "prt",
     };
     assert.deepEqual(
       TOOL_TOPICS.map((t) => t.id).sort(),

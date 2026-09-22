@@ -30,9 +30,11 @@ const COMPONENTS = {
   due: () => import("../components/tools/DueDatesTool.vue"),
   eval: () => import("../components/tools/EvalLookupTool.vue"),
   points: () => import("../components/tools/PointsTracker.vue"),
+  prt: () => import("../components/tools/PrtTool.vue"),
   phonetic: () => import("../components/tools/PhoneticTool.vue"),
   ribbons: () => import("../components/tools/RibbonRackTool.vue"),
   ranks: () => import("../components/tools/RankExplorer.vue"),
+  globalwatch: () => import("../components/tools/GlobalWatchTool.vue"),
 };
 
 const TABS = TOOLS.map((t) => ({ ...t, component: defineAsyncComponent(COMPONENTS[t.id]) }));

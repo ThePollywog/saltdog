@@ -40,6 +40,7 @@ const totalBytes = computed(() => entries.value.reduce((n, e) => n + e.bytes, 0)
 const LABELS = {
   chat: "Assistant panel size",
   checklist: "Readiness checklist progress",
+  globalwatch: "World Map zone list and clock settings",
   points: "Retirement points entries",
   ribbons: "Saved ribbon rack",
   theme: "Light/dark theme choice",

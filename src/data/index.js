@@ -29,6 +29,7 @@ import awards from "./awards.js";
 import uniform from "./uniform.js";
 import doctrine from "./doctrine.js";
 import directives from "./directives.js";
+import prt from "./prt.js";
 
 /**
  * Knowledge topics, in the order they appear in nav and on the index page.
@@ -76,7 +77,7 @@ export const QUICKLINKS_TOPIC = quicklinks;
  * They are indexed and citable exactly like a knowledge topic; the only
  * difference is `home`, which sends every route and citation to the tool.
  */
-export const TOOL_TOPICS = [checklist, evalCalendar, ranks, phonetic, awards, uniform];
+export const TOOL_TOPICS = [checklist, evalCalendar, ranks, phonetic, awards, uniform, prt];
 
 /**
  * Topics that get a page of their own — the nav, the knowledge index, and the
