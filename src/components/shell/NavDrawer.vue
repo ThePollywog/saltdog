@@ -6,6 +6,7 @@
  */
 import {
   mdiAccountGroupOutline,
+  mdiAnchor,
   mdiAlphabeticalVariant,
   mdiCalendarCheckOutline,
   mdiCheckboxMarkedOutline,
@@ -19,6 +20,7 @@ import {
   mdiSitemapOutline,
   mdiMedalOutline,
   mdiGavel,
+  mdiYoutube,
 } from "@mdi/js";
 import { TOPICS } from "../../data/index.js";
 import { TOOLS } from "../../data/tools.js";
@@ -28,6 +30,7 @@ defineEmits(["update:modelValue"]);
 
 /** Topic id -> icon. Kept here so data modules stay free of presentation. */
 const TOPIC_ICONS = {
+  doctrine: mdiAnchor,
   "reservist-checklist": mdiCheckboxMarkedOutline,
   "eval-fitrep": mdiCalendarCheckOutline,
   ranks: mdiAccountGroupOutline,
@@ -38,6 +41,18 @@ const TOPIC_ICONS = {
   awards: mdiMedalOutline,
   directives: mdiGavel,
 };
+
+/**
+ * External knowledge resources, listed after the topics. They get `href` and a
+ * new-tab glyph for the same reason the companion apps do: they leave the site.
+ */
+const KNOWLEDGE_LINKS = [
+  {
+    title: "How To Pollywog (YouTube)",
+    href: "https://www.youtube.com/@HowToPollywog",
+    icon: mdiYoutube,
+  },
+];
 
 /**
  * The drawer shows the fuller `navTitle` — the tab bar has to fit six labels on
@@ -100,6 +115,20 @@ const COMPANION_APPS = [
           :prepend-icon="TOPIC_ICONS[t.id]"
           :title="t.navTitle || t.title"
         />
+        <v-list-item
+          v-for="l in KNOWLEDGE_LINKS"
+          :key="l.href"
+          :href="l.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          :prepend-icon="l.icon"
+          :title="l.title"
+        >
+          <template #append>
+            <v-icon :icon="mdiOpenInNew" size="13" aria-hidden="true" />
+            <span class="sr-only">(opens in a new tab)</span>
+          </template>
+        </v-list-item>
       </v-list>
 
       <v-divider class="my-1" />
